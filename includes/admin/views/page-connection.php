@@ -713,6 +713,7 @@ SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1</pre>
 						<?php
 						$emcp_sync_entitled = class_exists( 'EMCP_Tools_Settings_Sync' ) && EMCP_Tools_Settings_Sync::entitled();
 						$emcp_synced        = isset( $_GET['synced'] ) ? sanitize_key( wp_unslash( $_GET['synced'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+						$emcp_sync_error    = isset( $_GET['sync_error'] ) ? sanitize_key( wp_unslash( $_GET['sync_error'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 						?>
 						<div class="emcp-conn-card">
 							<h2 class="emcp-conn-card-title"><?php esc_html_e( 'Settings sync', 'emcp-tools' ); ?></h2>
@@ -721,7 +722,15 @@ SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1</pre>
 							<?php elseif ( 'pull' === $emcp_synced ) : ?>
 								<div class="notice notice-success inline"><p><?php esc_html_e( 'Settings pulled from the cloud and applied.', 'emcp-tools' ); ?></p></div>
 							<?php elseif ( 'err' === $emcp_synced ) : ?>
-								<div class="notice notice-error inline"><p><?php esc_html_e( 'Settings sync failed. Make sure your Cloud plan includes settings sync.', 'emcp-tools' ); ?></p></div>
+								<?php if ( in_array( $emcp_sync_error, array( 'not_entitled', 'cloud_http_402' ), true ) ) : ?>
+									<div class="notice notice-error inline"><p><?php esc_html_e( 'Settings sync requires a paid EMCP Cloud plan.', 'emcp-tools' ); ?></p></div>
+								<?php elseif ( 'cloud_http_404' === $emcp_sync_error ) : ?>
+									<div class="notice notice-error inline"><p><?php esc_html_e( 'No synced settings were found. Push settings from another connected site first.', 'emcp-tools' ); ?></p></div>
+								<?php elseif ( 'not_connected' === $emcp_sync_error ) : ?>
+									<div class="notice notice-error inline"><p><?php esc_html_e( 'Reconnect this site to EMCP Cloud, then try again.', 'emcp-tools' ); ?></p></div>
+								<?php else : ?>
+									<div class="notice notice-error inline"><p><?php esc_html_e( 'Settings sync failed. Please try again or reconnect this site to EMCP Cloud.', 'emcp-tools' ); ?></p></div>
+								<?php endif; ?>
 							<?php endif; ?>
 
 							<?php if ( $emcp_sync_entitled ) : ?>

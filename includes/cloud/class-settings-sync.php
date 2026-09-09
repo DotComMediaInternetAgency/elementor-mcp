@@ -100,6 +100,8 @@ class EMCP_Tools_Settings_Sync {
 		if ( is_wp_error( $gate ) ) {
 			return $gate;
 		}
+		// Settings are shared by every site in the workspace. Site-scoped storage
+		// makes a push visible only to the site that created it.
 		return EMCP_Tools_Cloud_Sync::push_config( 'settings', self::collect() );
 	}
 

@@ -160,6 +160,9 @@ class EMCP_Tools_Cloud_Sync {
 	/**
 	 * Push a config blob (settings/brand_kit/tool_toggles) to the cloud.
 	 *
+	 * Settings are account-scoped so another connected site can pull them. Other
+	 * config types retain their existing site-scoped behavior.
+	 *
 	 * @param string $type Config type.
 	 * @param array  $data Config data.
 	 * @return array|\WP_Error
@@ -168,9 +171,11 @@ class EMCP_Tools_Cloud_Sync {
 		if ( ! EMCP_Tools_Cloud::is_connected() ) {
 			return self::not_connected();
 		}
+		$scope     = ( 'settings' === $type ) ? 'account' : 'site';
+		$site_uuid = ( 'account' === $scope ) ? '' : EMCP_Tools_Cloud::site_uuid();
 		return EMCP_Tools_Cloud_Client::put(
 			'/api/cloud/v1/config/' . rawurlencode( $type ),
-			array( 'scope' => 'site', 'site_uuid' => EMCP_Tools_Cloud::site_uuid(), 'data' => (string) wp_json_encode( $data ) )
+			array( 'scope' => $scope, 'site_uuid' => $site_uuid, 'data' => (string) wp_json_encode( $data ) )
 		);
 	}
 
@@ -181,8 +186,12 @@ class EMCP_Tools_Cloud_Sync {
 	 * @return array|\WP_Error
 	 */
 	public static function pull_config( string $type ) {
+		$scope     = ( 'settings' === $type ) ? 'account' : 'site';
+		$site_uuid = ( 'account' === $scope ) ? '' : EMCP_Tools_Cloud::site_uuid();
 		return EMCP_Tools_Cloud_Client::get(
-			'/api/cloud/v1/config/' . rawurlencode( $type ) . '?site_uuid=' . rawurlencode( EMCP_Tools_Cloud::site_uuid() )
+			'/api/cloud/v1/config/' . rawurlencode( $type )
+			. '?scope=' . rawurlencode( $scope )
+			. '&site_uuid=' . rawurlencode( $site_uuid )
 		);
 	}
 

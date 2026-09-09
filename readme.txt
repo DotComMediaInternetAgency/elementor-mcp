@@ -3,7 +3,7 @@ Contributors: mianshahzadraza
 Tags: elementor, mcp, ai, page-builder, automation
 Requires at least: 6.9
 Tested up to: 7.1
-Stable tag: 3.15.0
+Stable tag: 3.15.1
 Requires PHP: 8.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -177,6 +177,13 @@ On shared LiteSpeed hosting (e.g. Hostinger) this is usually the host caching/bu
 2. Connection configuration page with copy-paste configs.
 
 == Changelog ==
+
+= 3.15.1 =
+Fixes AI Chat for the latest OpenAI models, reduces token usage, and restores cross-site settings sync.
+* Fixed: GPT-5.6 and Astra models now use OpenAI's Responses API, while older OpenAI models and OpenAI-compatible providers keep using Chat Completions. Follow-up messages no longer abort because of a stale send handler.
+* Improved: AI Chat sends a smaller tool and conversation context, loads specialist tool groups only when needed, bounds large tool results and histories, and reports cached input tokens correctly.
+* Fixed: settings pushed to EMCP Cloud are shared across the account so another connected site can pull them. Sync failures now explain whether the plan, connection, or missing cloud data caused the problem. Secrets, API keys, and connection credentials remain excluded.
+* Compatibility: Cloud sign-in accepts older server registration responses while using the stronger registration proof when supplied, allowing website and plugin updates to roll out independently.
 
 = 3.15.0 =
 

@@ -2,6 +2,15 @@
 
 All notable changes to MCP Tools for Elementor are documented in this file.
 
+## [3.15.1]
+
+> Fixes AI Chat for the latest OpenAI models, reduces the context sent on each turn, and restores settings sync between connected sites.
+
+- Fixed: **GPT-5.6 and Astra work in AI Chat (Pro).** Native OpenAI models that require the Responses API now use `/v1/responses`; older OpenAI models and third-party OpenAI-compatible providers continue to use `/v1/chat/completions`. A stale second click handler that could abort a follow-up message was removed as well.
+- Improved: **AI Chat sends much less context on each turn (Pro).** The initial request carries a compact core tool set, specialist groups load only when needed, and tool schemas, tool results, and retained history are bounded. Cached input tokens are reported correctly, and reasoning/output defaults are tuned for tool-driven chat. Existing tools remain available through on-demand groups.
+- Fixed: **Settings sync works between sites connected to the same EMCP Cloud account.** Settings now use account scope, while other cloud configuration types retain their existing site scope. The admin notice distinguishes a missing plan, missing cloud data, and a disconnected site. Secrets, API keys, and cloud connection credentials remain excluded.
+- Compatibility: **Cloud connection supports staggered website and plugin updates.** The plugin uses the server-issued registration proof when present and still accepts an older registration response without it, so existing connections and new sign-ins continue working while the two releases roll out.
+
 ## [3.15.0]
 
 > Adds public page HTML inspection, Elementor CSS regeneration, and native WooCommerce Brands support, and improves Navigator labels and layout guidance.

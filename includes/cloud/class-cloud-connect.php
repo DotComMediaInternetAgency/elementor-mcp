@@ -50,7 +50,7 @@ class EMCP_Tools_Cloud_Connect {
 	/**
 	 * Dynamic Client Registration: create a public PKCE client.
 	 *
-	 * @return string|\WP_Error The client_id, or an error.
+	 * @return array{client_id:string,registration_proof:string}|\WP_Error The registration, or an error.
 	 */
 	public static function register_client() {
 		$res = EMCP_Tools_Cloud_Http::post_json(
@@ -65,12 +65,16 @@ class EMCP_Tools_Cloud_Connect {
 		if ( is_wp_error( $res ) ) {
 			return $res;
 		}
-		$id   = (string) ( $res['json']['client_id'] ?? '' );
+		$id    = (string) ( $res['json']['client_id'] ?? '' );
+		$proof = (string) ( $res['json']['emcp_site_registration_proof'] ?? '' );
 		$code = (int) $res['code'];
 		if ( ( 200 !== $code && 201 !== $code ) || '' === $id ) {
 			return new \WP_Error( 'dcr_failed', __( 'Could not register this site with EMCP Cloud.', 'emcp-tools' ) );
 		}
-		return $id;
+		return array(
+			'client_id'         => $id,
+			'registration_proof' => $proof,
+		);
 	}
 
 	/**
@@ -79,28 +83,24 @@ class EMCP_Tools_Cloud_Connect {
 	 * @param string $client_id Registered client id.
 	 * @param string $verifier  PKCE verifier (challenge derived here).
 	 * @param string $csrf      Opaque CSRF token embedded in state.
+	 * @param string $registration_proof Optional server-issued DCR ownership proof.
 	 * @return string
 	 */
-	public static function authorize_url( string $client_id, string $verifier, string $csrf ): string {
-		$state = EMCP_Tools_OAuth_Util::base64url_encode(
-			(string) wp_json_encode(
-				array(
-					'site_uuid' => EMCP_Tools_Cloud::site_uuid(),
-					'name'      => (string) get_bloginfo( 'name' ),
-					// The base URL the Cloud should call back into, subdirectory
-					// included. Cloud used to take the ORIGIN of the redirect_uri,
-					// which is scheme + host + port by definition, so an install
-					// under /blog/ was registered as the bare domain and every
-					// gateway request went to a URL that was not the site. Sent
-					// here because this is the only side that knows about an
-					// admin's Server URL override.
-					'base'      => class_exists( 'EMCP_Tools_Site_Context' )
-						? EMCP_Tools_Site_Context::public_base_url()
-						: rtrim( (string) home_url(), '/' ),
-					'csrf'      => $csrf,
-				)
-			)
+	public static function authorize_url( string $client_id, string $verifier, string $csrf, string $registration_proof = '' ): string {
+		$state_payload = array(
+			'site_uuid' => EMCP_Tools_Cloud::site_uuid(),
+			'name'      => (string) get_bloginfo( 'name' ),
+			// This is the only side that knows about an administrator's Server URL
+			// override and WordPress subdirectory, so send the callback base directly.
+			'base'      => class_exists( 'EMCP_Tools_Site_Context' )
+				? EMCP_Tools_Site_Context::public_base_url()
+				: rtrim( (string) home_url(), '/' ),
+			'csrf'      => $csrf,
 		);
+		if ( '' !== $registration_proof ) {
+			$state_payload['registration_proof'] = $registration_proof;
+		}
+		$state = EMCP_Tools_OAuth_Util::base64url_encode( (string) wp_json_encode( $state_payload ) );
 		$params = array(
 			'response_type'         => 'code',
 			'client_id'             => $client_id,
@@ -338,12 +338,14 @@ class EMCP_Tools_Cloud_Connect {
 	public static function handle_connect(): void {
 		self::guard_cap();
 		check_admin_referer( self::ACTION_CONNECT );
-		$client_id = self::register_client();
-		if ( is_wp_error( $client_id ) ) {
+		$registration = self::register_client();
+		if ( is_wp_error( $registration ) ) {
 			self::back( 'cloud_error=dcr' );
 		}
-		$verifier = EMCP_Tools_OAuth_Util::generate_code_verifier();
-		$csrf     = EMCP_Tools_OAuth_Util::generate_token();
+		$client_id          = (string) $registration['client_id'];
+		$registration_proof = (string) $registration['registration_proof'];
+		$verifier           = EMCP_Tools_OAuth_Util::generate_code_verifier();
+		$csrf               = EMCP_Tools_OAuth_Util::generate_token();
 		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce already checked by check_admin_referer() above.
 		$gateway_optin = isset( $_POST['emcp_gateway_optin'] );
 		set_transient(
@@ -369,7 +371,7 @@ class EMCP_Tools_Cloud_Connect {
 				}
 			);
 		}
-		wp_safe_redirect( self::authorize_url( (string) $client_id, $verifier, $csrf ) );
+		wp_safe_redirect( self::authorize_url( $client_id, $verifier, $csrf, $registration_proof ) );
 		exit;
 	}
 
