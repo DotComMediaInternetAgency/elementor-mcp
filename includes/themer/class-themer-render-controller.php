@@ -23,6 +23,12 @@ class EMCP_Tools_Themer_Render_Controller {
 	/** @var array<string,?int>|null */
 	private static $slots = null;
 
+	/** @var array{header:?int,footer:?int}|null */
+	private static $hello_slots = null;
+
+	/** @var array<string,bool> */
+	private static $hello_rendered = array();
+
 	/**
 	 * Wire hooks. Called by the module on `init`.
 	 */
@@ -162,6 +168,15 @@ class EMCP_Tools_Themer_Render_Controller {
 		if ( ! isset( $map[ $adapter ] ) ) {
 			return;
 		}
+
+		if ( 'hello-location-filter' === ( $map[ $adapter ]['strategy'] ?? '' ) ) {
+			$this->wire_hello_adapter( $slots );
+			return;
+		}
+
+		if ( empty( $map[ $adapter ]['header'] ) || empty( $map[ $adapter ]['footer'] ) ) {
+			return;
+		}
 		if ( ! empty( $slots['header'] ) ) {
 			// Replace the theme's header: drop its callbacks on the render hook,
 			// then print ours in their place (so the theme header doesn't ALSO
@@ -188,6 +203,68 @@ class EMCP_Tools_Themer_Render_Controller {
 	}
 
 	/**
+	 * Replace Hello Elementor's native parts at their render location.
+	 *
+	 * Hello calls the same filter for asset/settings checks, so the callback only
+	 * acts after wp_head() has completed for the header, or after get_footer() has
+	 * loaded the footer template but before wp_footer(). When Elementor Pro owns a
+	 * location, Hello never reaches the filter and Pro keeps precedence.
+	 *
+	 * @param array $slots Resolved slots.
+	 */
+	private function wire_hello_adapter( array $slots ): void {
+		self::$hello_slots = array(
+			'header' => ! empty( $slots['header'] ) ? (int) $slots['header'] : null,
+			'footer' => ! empty( $slots['footer'] ) ? (int) $slots['footer'] : null,
+		);
+		self::$hello_rendered = array();
+
+		add_filter( 'hello_elementor_header_footer', array( __CLASS__, 'maybe_render_hello_location' ), 99 );
+	}
+
+	/**
+	 * Render the selected EMCP part and tell Hello to skip its native counterpart.
+	 *
+	 * @param bool $display Whether Hello would display its native part.
+	 * @return bool
+	 */
+	public static function maybe_render_hello_location( $display ): bool {
+		if ( null === self::$hello_slots ) {
+			return (bool) $display;
+		}
+
+		if (
+			did_action( 'get_footer' ) > 0
+			&& 0 === did_action( 'wp_footer' )
+			&& ! doing_action( 'get_footer' )
+		) {
+			$location = 'footer';
+		} elseif (
+			did_action( 'get_header' ) > 0
+			&& did_action( 'wp_head' ) > 0
+			&& ! doing_action( 'get_header' )
+			&& ! doing_action( 'wp_head' )
+		) {
+			$location = 'header';
+		} else {
+			// Hello also uses this filter while registering settings and assets.
+			return (bool) $display;
+		}
+
+		$template_id = self::$hello_slots[ $location ] ?? null;
+		if ( empty( $template_id ) ) {
+			return (bool) $display;
+		}
+
+		if ( empty( self::$hello_rendered[ $location ] ) ) {
+			echo EMCP_Tools_Themer_Content_Renderer::render( (int) $template_id ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+			self::$hello_rendered[ $location ] = true;
+		}
+
+		return false;
+	}
+
+	/**
 	 * Whether Elementor Pro's theme builder has a body location for this request.
 	 *
 	 * @return bool
@@ -207,7 +284,18 @@ class EMCP_Tools_Themer_Render_Controller {
 
 	/** Reset memoized slots (tests). */
 	public static function reset_for_tests(): void {
-		self::$slots = null;
+		self::$slots          = null;
+		self::$hello_slots    = null;
+		self::$hello_rendered = array();
+	}
+
+	/** Configure Hello slots without resolving a WordPress query (tests). */
+	public static function set_hello_slots_for_tests( array $slots ): void {
+		self::$hello_slots = array(
+			'header' => ! empty( $slots['header'] ) ? (int) $slots['header'] : null,
+			'footer' => ! empty( $slots['footer'] ) ? (int) $slots['footer'] : null,
+		);
+		self::$hello_rendered = array();
 	}
 }
 

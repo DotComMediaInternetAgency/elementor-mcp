@@ -22,9 +22,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 class EMCP_Tools_Themer_Theme_Adapters {
 
 	/**
-	 * Supported theme (template) slug => { header, footer } hook names.
+	 * Supported theme (template) slug => hook names or a dedicated strategy.
 	 *
-	 * @return array<string,array{header:string,footer:string}>
+	 * @return array<string,array{header?:string,footer?:string,strategy?:string}>
 	 */
 	public static function map(): array {
 		/**
@@ -41,7 +41,9 @@ class EMCP_Tools_Themer_Theme_Adapters {
 				'oceanwp'         => array( 'header' => 'ocean_header', 'footer' => 'ocean_footer' ),
 				'blocksy'         => array( 'header' => 'blocksy:header', 'footer' => 'blocksy:footer' ),
 				'neve'            => array( 'header' => 'neve_after_header_wrapper_hook', 'footer' => 'neve_before_footer_hook' ),
-				'hello-elementor' => array( 'header' => 'hello_elementor_header', 'footer' => 'hello_elementor_footer' ),
+				// Hello has no header/footer action hooks. Its templates consult this
+				// filter at the exact point where each native part would be printed.
+				'hello-elementor' => array( 'strategy' => 'hello-location-filter' ),
 			)
 		);
 	}

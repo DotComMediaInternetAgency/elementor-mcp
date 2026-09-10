@@ -367,14 +367,27 @@ class EMCP_Tools_Admin {
 	 * Nonce-protected URL that rolls back one change-ledger entry.
 	 *
 	 * @since 3.3.0
-	 * @param string $id Change id.
+	 * @param string $id     Change id.
+	 * @param bool   $force  Whether to bypass the conflict guard.
+	 * @param int    $page   History page to return to.
+	 * @param string $domain Active History domain filter.
 	 * @return string
 	 */
-	public static function rollback_change_url( string $id, bool $force = false ): string {
-		$url = admin_url( 'admin-post.php?action=' . self::ACTION_ROLLBACK_CHANGE . '&change=' . rawurlencode( $id ) );
+	public static function rollback_change_url( string $id, bool $force = false, int $page = 1, string $domain = '' ): string {
+		$args = array(
+			'action' => self::ACTION_ROLLBACK_CHANGE,
+			'change' => $id,
+		);
 		if ( $force ) {
-			$url .= '&force=1';
+			$args['force'] = 1;
 		}
+		if ( $page > 1 ) {
+			$args['history_page'] = $page;
+		}
+		if ( '' !== $domain ) {
+			$args['domain'] = sanitize_key( $domain );
+		}
+		$url = add_query_arg( $args, admin_url( 'admin-post.php' ) );
 		return wp_nonce_url( $url, self::ACTION_ROLLBACK_CHANGE . '_' . $id );
 	}
 
@@ -394,17 +407,25 @@ class EMCP_Tools_Admin {
 		check_admin_referer( self::ACTION_ROLLBACK_CHANGE . '_' . $id );
 
 		$result = class_exists( 'EMCP_Tools_Change_Log' ) ? EMCP_Tools_Change_Log::rollback( $id, $force ) : new WP_Error( 'unavailable', 'unavailable' );
+		$redirect_args = array(
+			'page' => self::PAGE_SLUG . '-history',
+		);
 		if ( is_wp_error( $result ) ) {
 			// A conflict is recoverable — bounce back with the id so the History
 			// tab can offer a "roll back anyway" (force) action.
-			$status = ( 'conflict' === $result->get_error_code() )
-				? 'conflict&change=' . rawurlencode( $id )
-				: 'error&msg=' . rawurlencode( $result->get_error_message() );
+			if ( 'conflict' === $result->get_error_code() ) {
+				$redirect_args['rollback'] = 'conflict';
+				$redirect_args['change']   = $id;
+			} else {
+				$redirect_args['rollback'] = 'error';
+				$redirect_args['msg']      = $result->get_error_message();
+			}
 		} else {
-			$status = ! empty( $result['partial'] ) ? 'partial' : 'ok';
+			$redirect_args['rollback'] = ! empty( $result['partial'] ) ? 'partial' : 'ok';
 		}
+		$redirect_args = array_merge( $redirect_args, self::history_return_args() );
 
-		wp_safe_redirect( admin_url( 'admin.php?page=' . self::PAGE_SLUG . '-history&rollback=' . $status ) );
+		wp_safe_redirect( add_query_arg( $redirect_args, admin_url( 'admin.php' ) ) );
 		exit;
 	}
 
@@ -412,14 +433,47 @@ class EMCP_Tools_Admin {
 	 * Nonce'd URL that deletes one History entry.
 	 *
 	 * @since 3.4.2
-	 * @param string $id Entry id.
+	 * @param string $id     Entry id.
+	 * @param int    $page   History page to return to.
+	 * @param string $domain Active History domain filter.
 	 * @return string
 	 */
-	public static function delete_change_url( string $id ): string {
+	public static function delete_change_url( string $id, int $page = 1, string $domain = '' ): string {
+		$args = array(
+			'action' => self::ACTION_DELETE_CHANGE,
+			'change' => $id,
+		);
+		if ( $page > 1 ) {
+			$args['history_page'] = $page;
+		}
+		if ( '' !== $domain ) {
+			$args['domain'] = sanitize_key( $domain );
+		}
 		return wp_nonce_url(
-			admin_url( 'admin-post.php?action=' . self::ACTION_DELETE_CHANGE . '&change=' . rawurlencode( $id ) ),
+			add_query_arg( $args, admin_url( 'admin-post.php' ) ),
 			self::ACTION_DELETE_CHANGE . '_' . $id
 		);
+	}
+
+	/**
+	 * Sanitized History location carried through row actions.
+	 *
+	 * @since 3.16.0
+	 * @return array<string,int|string>
+	 */
+	private static function history_return_args(): array {
+		$args = array();
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- the action nonce is verified by the caller.
+		$page = isset( $_GET['history_page'] ) ? absint( wp_unslash( $_GET['history_page'] ) ) : 1;
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- the action nonce is verified by the caller.
+		$domain = isset( $_GET['domain'] ) ? sanitize_key( wp_unslash( $_GET['domain'] ) ) : '';
+		if ( $page > 1 ) {
+			$args['history_page'] = $page;
+		}
+		if ( '' !== $domain ) {
+			$args['domain'] = $domain;
+		}
+		return $args;
 	}
 
 	/**
@@ -450,7 +504,14 @@ class EMCP_Tools_Admin {
 
 		$deleted = class_exists( 'EMCP_Tools_Change_Log' ) && EMCP_Tools_Change_Log::delete( $id );
 
-		wp_safe_redirect( admin_url( 'admin.php?page=' . self::PAGE_SLUG . '-history&deleted=' . ( $deleted ? '1' : '0' ) ) );
+		$redirect_args = array_merge(
+			array(
+				'page'    => self::PAGE_SLUG . '-history',
+				'deleted' => $deleted ? '1' : '0',
+			),
+			self::history_return_args()
+		);
+		wp_safe_redirect( add_query_arg( $redirect_args, admin_url( 'admin.php' ) ) );
 		exit;
 	}
 
@@ -1600,6 +1661,11 @@ class EMCP_Tools_Admin {
 			'emcp-tools/woo-read',
 			'emcp-tools/woo-write',
 		);
+	}
+
+	/** The FunnelKit integration's conditional dispatcher slug. */
+	public static function funnelkit_tool_slugs(): array {
+		return array( 'emcp-tools/funnelkit-read' );
 	}
 
 	/**
@@ -4225,6 +4291,11 @@ class EMCP_Tools_Admin {
 		return class_exists( 'WooCommerce' ) || function_exists( 'WC' );
 	}
 
+	/** @since 3.16.0 */
+	public static function funnelkit_available(): bool {
+		return defined( 'WFFN_VERSION' ) && function_exists( 'WFFN_Core' );
+	}
+
 	/**
 	 * Form-plugin availability — mirrors each adapter's is_active() so the admin
 	 * card greys out its toggles when the plugin is inactive. Detection is
@@ -4629,6 +4700,7 @@ class EMCP_Tools_Admin {
 				self::themer_php_tool_slugs(),
 				self::acf_tool_slugs(),
 				self::woo_tool_slugs(),
+				self::funnelkit_tool_slugs(),
 				self::metabox_tool_slugs(),
 				self::form_tool_slugs(),
 				self::seo_tool_slugs(),
@@ -5050,7 +5122,7 @@ class EMCP_Tools_Admin {
 					),
 					'emcp-tools/install-plugin'    => array(
 						'label'       => __( 'Install Plugin', 'emcp-tools' ),
-						'description' => __( 'Installs a plugin from wordpress.org by slug.', 'emcp-tools' ),
+						'description' => __( 'Installs a plugin from wordpress.org by slug or from a confirmed, hash-verified Media Library ZIP.', 'emcp-tools' ),
 						'badges'      => array(),
 					),
 					'emcp-tools/activate-plugin'   => array(
@@ -5085,7 +5157,7 @@ class EMCP_Tools_Admin {
 					),
 					'emcp-tools/install-theme'     => array(
 						'label'       => __( 'Install Theme', 'emcp-tools' ),
-						'description' => __( 'Installs a theme from wordpress.org by slug.', 'emcp-tools' ),
+						'description' => __( 'Installs a theme from wordpress.org by slug or from a confirmed, hash-verified Media Library ZIP.', 'emcp-tools' ),
 						'badges'      => array(),
 					),
 					'emcp-tools/switch-theme'      => array(
@@ -5158,6 +5230,8 @@ class EMCP_Tools_Admin {
 						'badges'      => array(),
 						'operations'  => array(
 							'update-fields',
+							'validate-fields',
+							'batch-update-fields',
 							'create-field-group',
 							'update-field-group',
 							'create-post-type',
@@ -5185,11 +5259,28 @@ class EMCP_Tools_Admin {
 					),
 					'emcp-tools/woo-write' => array(
 						'label'            => __( 'WooCommerce Write', 'emcp-tools' ),
-						'description'      => __( 'Create and update native brands, plus create/update/delete products, orders, refunds, customers, coupons, settings, shipping, taxes, and webhooks. Brand writes support dry_run:true. Refunds/deletes/batch require confirm:true. Call with no operation to list all write operations.', 'emcp-tools' ),
+						'description'      => __( 'Plan and safely upsert structured product imports by ID or exact SKU, create and update native brands, and manage WooCommerce data. Imports are hash-bound and never delete. Refunds/deletes/batch require confirm:true.', 'emcp-tools' ),
 						'badges'           => array( 'destructive' ),
-						'operations'       => array( 'create-product', 'create-brand', 'update-brand', 'update-order', 'create-refund', 'create-customer', 'delete-order', 'update-setting', '…' ),
+						'operations'       => array( 'plan-product-import', 'upsert-products', 'create-product', 'create-brand', 'update-brand', 'update-order', 'create-refund', 'create-customer', 'delete-order', 'update-setting', '…' ),
 						'available'        => self::woo_available(),
 						'requires'         => array( 'name' => 'WooCommerce', 'kind' => 'plugin' ),
+					),
+				),
+			),
+			'wp_funnelkit'     => array(
+				'platform' => 'plugins',
+				'group'    => 'ecommerce',
+				'pro'      => true,
+				'label'    => __( 'FunnelKit', 'emcp-tools' ),
+				'note'     => __( 'Read FunnelKit Funnel Builder funnels and decoded page configuration through FunnelKit\'s supported controllers. Compact summaries avoid dumping large checkout layout payloads; full decoded configuration is opt-in. Requires FunnelKit Funnel Builder active.', 'emcp-tools' ),
+				'tools'    => array(
+					'emcp-tools/funnelkit-read' => array(
+						'label'       => __( 'FunnelKit Read', 'emcp-tools' ),
+						'description' => __( 'List funnels and ordered steps; read decoded funnel pages, checkout products with effective prices, and checkout fieldsets.', 'emcp-tools' ),
+						'badges'      => array( 'read-only' ),
+						'operations'  => array( 'list-funnels', 'get-funnel', 'get-funnel-page', 'get-checkout-products', 'get-checkout-fields' ),
+						'available'   => self::funnelkit_available(),
+						'requires'    => array( 'name' => 'FunnelKit Funnel Builder', 'kind' => 'plugin' ),
 					),
 				),
 			),

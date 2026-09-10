@@ -78,9 +78,11 @@ skills/*
 .mcp.json
 
 #Meta
-# Local-only working docs (superpowers specs/plans, design notes). Never ship
-# to GitHub or the release zip.
-docs/
+# Local working docs (superpowers specs/plans, design notes) remain ignored.
+# Release-facing integration guides are the only public files under docs/.
+/docs/*
+!/docs/ACF-MCP-COVERAGE.md
+!/docs/GSAP-INTEGRATION.md
 .commandcode/
 
 # Pro overlay lives in the private pro/ submodule (see pro-manifest.txt).

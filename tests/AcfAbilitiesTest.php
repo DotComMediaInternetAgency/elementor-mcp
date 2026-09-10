@@ -28,6 +28,11 @@ class AcfAbilitiesTest extends TestCase {
 	 */
 	private function seed_post_with_group(): void {
 		$GLOBALS['emcp_test']['posts'][10] = new WP_Post( array( 'ID' => 10, 'post_title' => 'Sample' ) );
+		foreach ( array( 42, 43 ) as $attachment_id ) {
+			$GLOBALS['emcp_test']['posts'][ $attachment_id ]           = new WP_Post( array( 'ID' => $attachment_id, 'post_type' => 'attachment' ) );
+			$GLOBALS['emcp_test']['post_mime_types'][ $attachment_id ] = 'image/jpeg';
+			$GLOBALS['emcp_test']['attachment_urls'][ $attachment_id ] = 'http://example.test/image-' . $attachment_id . '.jpg';
+		}
 
 		$group = array( 'key' => 'group_demo', 'ID' => 55, 'title' => 'Demo Group', 'active' => true );
 		$GLOBALS['emcp_test']['field_groups'][]        = $group;
@@ -58,6 +63,11 @@ class AcfAbilitiesTest extends TestCase {
 		);
 	}
 
+	private function add_field( array $field ): void {
+		$GLOBALS['emcp_test']['group_fields']['group_demo'][] = $field;
+		$GLOBALS['emcp_test']['fields_by_key'][ $field['key'] ] = $field;
+	}
+
 	// -------------------------------------------------------------------
 	// Registration
 	// -------------------------------------------------------------------
@@ -77,7 +87,7 @@ class AcfAbilitiesTest extends TestCase {
 		$this->assertSame( 'read', $out['mode'] );
 		$names = array_column( $out['operations'], 'operation' );
 		$this->assertSame(
-			array( 'list-field-groups', 'get-field-group', 'list-options-pages', 'get-fields', 'list-post-types', 'get-post-type', 'list-taxonomies', 'get-taxonomy' ),
+			array( 'list-field-types', 'list-field-groups', 'get-field-group', 'list-options-pages', 'get-fields', 'list-post-types', 'get-post-type', 'list-taxonomies', 'get-taxonomy' ),
 			$names
 		);
 	}
@@ -87,7 +97,7 @@ class AcfAbilitiesTest extends TestCase {
 		$this->assertSame( 'write', $out['mode'] );
 		$names = array_column( $out['operations'], 'operation' );
 		$this->assertSame(
-			array( 'update-fields', 'create-field-group', 'update-field-group', 'create-post-type', 'update-post-type', 'create-taxonomy', 'update-taxonomy' ),
+			array( 'update-fields', 'validate-fields', 'batch-update-fields', 'create-field-group', 'update-field-group', 'create-post-type', 'update-post-type', 'create-taxonomy', 'update-taxonomy' ),
 			$names
 		);
 	}
@@ -224,6 +234,73 @@ class AcfAbilitiesTest extends TestCase {
 		$this->assertSame( array(), $result['updated'] );
 		$this->assertSame( array( array( 'field' => 'nope', 'reason' => 'field_not_found' ) ), $result['skipped'] );
 		$this->assertCount( 0, $GLOBALS['emcp_test']['update_field_calls'] );
+	}
+
+	public function test_update_fields_applies_type_validation_to_legacy_writes(): void {
+		$this->seed_post_with_group();
+		$this->add_field( array( 'key' => 'field_email', 'name' => 'email', 'label' => 'Email', 'type' => 'email' ) );
+
+		$result = $this->abilities->execute_update_fields( array(
+			'post_id' => 10,
+			'fields'  => array( 'email' => 'not-an-email' ),
+		) );
+
+		$this->assertSame( array( array( 'field' => 'email', 'reason' => 'invalid_email' ) ), $result['skipped'] );
+		$this->assertCount( 0, $GLOBALS['emcp_test']['update_field_calls'] );
+	}
+
+	public function test_group_fields_are_validated_recursively(): void {
+		$this->seed_post_with_group();
+		$this->add_field( array(
+			'key'        => 'field_group',
+			'name'       => 'details',
+			'label'      => 'Details',
+			'type'       => 'group',
+			'sub_fields' => array(
+				array( 'key' => 'field_required_child', 'name' => 'required_child', 'label' => 'Required Child', 'type' => 'text', 'required' => 1 ),
+			),
+		) );
+
+		$result = $this->abilities->execute_update_fields( array(
+			'post_id' => 10,
+			'fields'  => array( 'details' => array() ),
+		) );
+
+		$this->assertSame( 'required_sub_field_missing', $result['skipped'][0]['reason'] );
+	}
+
+	public function test_clone_fields_are_validated_recursively(): void {
+		$this->seed_post_with_group();
+		$this->add_field( array(
+			'key'        => 'field_clone',
+			'name'       => 'cloned',
+			'label'      => 'Cloned',
+			'type'       => 'clone',
+			'sub_fields' => array(
+				array( 'key' => 'field_clone_email', 'name' => 'qualified_clone_email', '_name' => 'clone_email', 'label' => 'Clone Email', 'type' => 'email', 'required' => 1 ),
+			),
+		) );
+
+		$bad = $this->abilities->execute_update_fields( array( 'post_id' => 10, 'fields' => array( 'cloned' => array( 'clone_email' => 'bad' ) ) ) );
+		$this->assertSame( 'invalid_email', $bad['skipped'][0]['reason'] );
+
+		$good = $this->abilities->execute_update_fields( array( 'post_id' => 10, 'fields' => array( 'cloned' => array( 'clone_email' => 'ok@example.com' ) ) ) );
+		$this->assertSame( array( 'cloned' ), $good['updated'] );
+	}
+
+	public function test_collection_minimums_and_strict_dates_are_enforced(): void {
+		$this->seed_post_with_group();
+		$this->add_field( array( 'key' => 'field_relation', 'name' => 'relation', 'label' => 'Relation', 'type' => 'relationship', 'min' => 1 ) );
+		$this->add_field( array( 'key' => 'field_date', 'name' => 'event_date', 'label' => 'Date', 'type' => 'date_picker' ) );
+		$this->add_field( array( 'key' => 'field_time', 'name' => 'event_time', 'label' => 'Time', 'type' => 'time_picker' ) );
+		$this->add_field( array( 'key' => 'field_range', 'name' => 'rating', 'label' => 'Rating', 'type' => 'range', 'min' => 1, 'step' => 0.5 ) );
+
+		$result = $this->abilities->execute_update_fields( array(
+			'post_id' => 10,
+			'fields'  => array( 'relation' => array(), 'event_date' => '2026-99-99', 'event_time' => '99:99:99', 'rating' => 1.25 ),
+		) );
+
+		$this->assertSame( array( 'below_minimum_count', 'invalid_date', 'invalid_time', 'invalid_step' ), array_column( $result['skipped'], 'reason' ) );
 	}
 
 	public function test_update_repeater_rows_pass_through_to_acf(): void {
@@ -369,6 +446,36 @@ class AcfAbilitiesTest extends TestCase {
 		// Default location applied.
 		$this->assertSame( 'post_type', $imported['location'][0][0]['param'] );
 		$this->assertSame( (int) $imported['ID'], $result['id'] );
+	}
+
+	public function test_create_group_preserves_advanced_settings_and_clone_source(): void {
+		$GLOBALS['emcp_test']['fields_by_key']['field_source'] = array( 'key' => 'field_source', 'name' => 'source', 'label' => 'Source', 'type' => 'text' );
+
+		$result = $this->abilities->execute_create_field_group( array(
+			'title'  => 'Advanced Settings',
+			'fields' => array(
+				array( 'label' => 'Text', 'name' => 'text', 'type' => 'text', 'maxlength' => 12, 'wrapper' => array( 'width' => '50' ) ),
+				array( 'label' => 'Clone', 'name' => 'clone', 'type' => 'clone', 'clone' => array( 'field_source' ), 'display' => 'group', 'prefix_name' => 1 ),
+			),
+		) );
+
+		$this->assertIsArray( $result );
+		$fields = $GLOBALS['emcp_test']['imported_groups'][0]['fields'];
+		$this->assertSame( 12, $fields[0]['maxlength'] );
+		$this->assertSame( array( 'width' => '50' ), $fields[0]['wrapper'] );
+		$this->assertSame( array( 'field_source' ), $fields[1]['clone'] );
+		$this->assertSame( 'group', $fields[1]['display'] );
+		$this->assertSame( 1, $fields[1]['prefix_name'] );
+	}
+
+	public function test_create_group_rejects_missing_clone_source(): void {
+		$result = $this->abilities->execute_create_field_group( array(
+			'title'  => 'Broken Clone',
+			'fields' => array( array( 'label' => 'Clone', 'name' => 'clone', 'type' => 'clone', 'clone' => array( 'field_missing' ) ) ),
+		) );
+
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( 'invalid_field', $result->get_error_code() );
 	}
 
 	public function test_create_group_rejects_pro_types_on_free_acf(): void {

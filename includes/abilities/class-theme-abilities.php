@@ -2,7 +2,7 @@
 /**
  * WordPress Theme lifecycle MCP abilities.
  *
- * Six tools to discover, install (wordpress.org only), switch (activate),
+ * Six tools to discover, install (wordpress.org or validated media ZIP), switch (activate),
  * update, and delete themes. Built on WP core's theme + upgrader APIs and
  * guarded by EMCP_Tools_Package_Guard. Reads ship enabled; the four mutation
  * tools ship disabled-by-default.
@@ -162,17 +162,20 @@ class EMCP_Tools_Theme_Abilities {
 			'emcp-tools/install-theme',
 			array(
 				'label'               => __( 'Install Theme', 'emcp-tools' ),
-				'description'         => __( 'Installs a theme from the wordpress.org directory by slug. Optionally activates it. Source is always wordpress.org.', 'emcp-tools' ),
+				'description'         => __( 'Installs a theme from wordpress.org by slug, or from a validated ZIP previously stored by upload-media. Uploaded ZIPs require expected_sha256 and confirm:true. Arbitrary URLs and server paths are never accepted.', 'emcp-tools' ),
 				'category'            => 'emcp-tools',
 				'execute_callback'    => array( $this, 'execute_install_theme' ),
 				'permission_callback' => array( $this, 'can_install' ),
 				'input_schema'        => array(
 					'type'       => 'object',
 					'properties' => array(
-						'slug'     => array( 'type' => 'string', 'description' => __( 'wordpress.org theme slug.', 'emcp-tools' ) ),
-						'activate' => array( 'type' => 'boolean', 'description' => __( 'Activate after install. Default: false.', 'emcp-tools' ) ),
+						'slug'                     => array( 'type' => 'string', 'description' => __( 'wordpress.org theme slug. Pass exactly one of slug or zip_attachment_id.', 'emcp-tools' ) ),
+						'zip_attachment_id'        => array( 'type' => 'integer', 'description' => __( 'Media attachment ID of a theme ZIP uploaded with upload-media.', 'emcp-tools' ) ),
+						'expected_sha256'          => array( 'type' => 'string', 'description' => __( 'Required SHA-256 for an uploaded ZIP.', 'emcp-tools' ) ),
+						'confirm'                  => array( 'type' => 'boolean', 'description' => __( 'Must be true for an uploaded ZIP because it installs executable code.', 'emcp-tools' ) ),
+						'activate'                 => array( 'type' => 'boolean', 'description' => __( 'Activate after install. Default: false.', 'emcp-tools' ) ),
+						'delete_zip_after_install' => array( 'type' => 'boolean', 'description' => __( 'Delete the media attachment after a successful install. Default: false.', 'emcp-tools' ) ),
 					),
-					'required'   => array( 'slug' ),
 				),
 				'output_schema'       => array( 'type' => 'object', 'properties' => array(
 					'installed' => array( 'type' => 'boolean' ), 'activated' => array( 'type' => 'boolean' ),
@@ -189,10 +192,17 @@ class EMCP_Tools_Theme_Abilities {
 	 */
 	public function execute_install_theme( $input ) {
 		$slug = sanitize_key( $input['slug'] ?? '' );
-		if ( '' === $slug ) {
-			return new \WP_Error( 'missing_params', __( 'A theme "slug" is required.', 'emcp-tools' ) );
+		$zip_attachment_id = absint( $input['zip_attachment_id'] ?? 0 );
+		if ( '' === $slug && ! $zip_attachment_id ) {
+			return new \WP_Error( 'missing_params', __( 'A theme slug or zip_attachment_id is required.', 'emcp-tools' ) );
+		}
+		if ( '' !== $slug && $zip_attachment_id ) {
+			return new \WP_Error( 'invalid_package_source', __( 'Pass exactly one package source: slug or zip_attachment_id.', 'emcp-tools' ) );
 		}
 		$activate = ! empty( $input['activate'] );
+		if ( $zip_attachment_id && true !== ( $input['confirm'] ?? null ) ) {
+			return new \WP_Error( 'confirmation_required', __( 'Uploaded theme ZIPs may contain executable code. Pass confirm:true to install.', 'emcp-tools' ) );
+		}
 		if ( $activate && ! current_user_can( 'switch_themes' ) ) {
 			return new \WP_Error( 'cannot_switch', __( 'You cannot switch themes.', 'emcp-tools' ) );
 		}
@@ -200,28 +210,42 @@ class EMCP_Tools_Theme_Abilities {
 		if ( is_wp_error( $ready ) ) {
 			return $ready;
 		}
-		$api = themes_api( 'theme_information', array( 'slug' => $slug, 'fields' => array( 'sections' => false ) ) );
-		if ( is_wp_error( $api ) ) {
-			return $api;
+		$package = null;
+		if ( $zip_attachment_id ) {
+			$package = EMCP_Tools_Package_Guard::prepare_uploaded_zip( $zip_attachment_id, (string) ( $input['expected_sha256'] ?? '' ), 'theme' );
+			if ( is_wp_error( $package ) ) { return $package; }
+			$source = $package['path'];
+			$slug   = $package['root'];
+		} else {
+			$api = themes_api( 'theme_information', array( 'slug' => $slug, 'fields' => array( 'sections' => false ) ) );
+			if ( is_wp_error( $api ) ) { return $api; }
+			$source = $api->download_link;
 		}
 		$skin     = EMCP_Tools_Package_Guard::make_skin();
 		$upgrader = new \Theme_Upgrader( $skin );
-		$result   = $upgrader->install( $api->download_link );
+		$result   = $upgrader->install( $source );
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
 		if ( false === $result || null === $result ) {
 			return new \WP_Error( 'install_failed', __( 'Theme installation failed.', 'emcp-tools' ) );
 		}
+		$installed_stylesheet = method_exists( $upgrader, 'theme_info' ) && $upgrader->theme_info() ? (string) $upgrader->theme_info()->get_stylesheet() : $slug;
+		if ( $package && $installed_stylesheet !== $package['root'] ) {
+			return new \WP_Error( 'installed_package_mismatch', __( 'The installed theme stylesheet does not match the validated archive.', 'emcp-tools' ) );
+		}
 		$activated = false;
 		if ( $activate ) {
 			switch_theme( $slug );
 			$activated = true;
 		}
+		if ( $package && ! empty( $input['delete_zip_after_install'] ) && function_exists( 'wp_delete_attachment' ) ) { wp_delete_attachment( $zip_attachment_id, true ); }
 		return array(
 			'installed'  => true,
 			'activated'  => $activated,
 			'stylesheet' => $slug,
+			'source'     => $package ? 'uploaded_zip' : 'wordpress.org',
+			'sha256'     => $package ? $package['sha256'] : null,
 			'messages'   => EMCP_Tools_Package_Guard::skin_messages( $skin ),
 		);
 	}

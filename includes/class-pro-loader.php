@@ -30,6 +30,8 @@ final class EMCP_Tools_Pro_Loader {
 		'includes/memory/class-memory-injector.php',
 		'includes/memory/class-memory-enforcer.php',
 		'includes/memory/class-memory-summarizer.php',
+		// GSAP Integration (Pro): local asset catalog and runtime registration.
+		'includes/gsap/class-gsap-assets.php',
 		// Backup / Migrate / Sync MCP tools (Pro). The engine classes load with
 		// the module on init:5; this ability class is loaded here so the registrar
 		// (wp_abilities_api_init, earlier) can register the group when the module
@@ -78,6 +80,7 @@ final class EMCP_Tools_Pro_Loader {
 		'includes/class-block-generator.php',
 		'includes/abilities/class-memory-abilities.php',
 		'includes/abilities/class-migrate-abilities.php',
+		'includes/abilities/class-gsap-abilities.php',
 		'includes/class-widget-generator.php',
 		'includes/abilities/class-system-kit-abilities.php',
 		'includes/abilities/class-widget-builder-abilities.php',
@@ -85,6 +88,7 @@ final class EMCP_Tools_Pro_Loader {
 		'includes/abilities/class-seo-abilities.php',
 		'includes/abilities/class-a11y-abilities.php',
 		'includes/abilities/class-woo-integration.php',
+		'includes/abilities/class-funnelkit-integration.php',
 		'includes/abilities/forms/class-wpforms-integration.php',
 		'includes/abilities/forms/class-gravityforms-integration.php',
 		'includes/abilities/forms/class-fluentforms-integration.php',
@@ -287,6 +291,14 @@ final class EMCP_Tools_Pro_Loader {
 			require_once $migrate_path;
 			if ( class_exists( 'EMCP_Tools_Migrate_Module' ) ) {
 				$registry->register( new EMCP_Tools_Migrate_Module() );
+			}
+		}
+
+		$gsap_path = self::path( 'includes/modules/class-gsap-module.php' );
+		if ( '' !== $gsap_path && class_exists( 'EMCP_Tools_GSAP_Assets' ) ) {
+			require_once $gsap_path;
+			if ( class_exists( 'EMCP_Tools_GSAP_Module' ) ) {
+				$registry->register( new EMCP_Tools_GSAP_Module() );
 			}
 		}
 	}

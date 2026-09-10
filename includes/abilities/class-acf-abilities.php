@@ -2,11 +2,8 @@
 /**
  * Advanced Custom Fields (ACF / ACF PRO) MCP abilities.
  *
- * Seven tools — list-acf-field-groups, get-acf-field-group, list-acf-options-pages,
- * get-acf-fields (read), update-acf-fields, create-acf-field-group,
- * update-acf-field-group (write) — for reading/writing ACF field values on posts
- * and options pages, discovering field groups (the "schema discovery" step an
- * agent runs before writing), and authoring field groups programmatically.
+ * Two dispatchers expose ACF schema discovery, field values, field-group
+ * authoring, and ACF-managed post-type/taxonomy operations.
  *
  * The whole group only registers when ACF (free or Pro) is active. Pro-only
  * capabilities (options pages; repeater / flexible content / gallery / clone
@@ -54,8 +51,8 @@ class EMCP_Tools_ACF_Abilities {
 
 	/**
 	 * Registers the ACF domain as TWO dispatcher tools — `acf-read` and
-	 * `acf-write` — rather than 15 individual abilities, to keep the MCP
-	 * tool-list small. Each of the 15 operations is still discoverable (call a
+	 * `acf-write` — rather than individual abilities, to keep the MCP tool-list
+	 * small. Every operation is still discoverable (call a
 	 * dispatcher with no operation to get its catalog) and individually gated by
 	 * its own admin toggle (Tools → Plugins → ACF) and its original capability
 	 * check, both enforced per call in dispatch().
@@ -82,6 +79,7 @@ class EMCP_Tools_ACF_Abilities {
 	private function operations(): array {
 		return array(
 			// Reads ---------------------------------------------------------
+			'list-field-types'   => array( 'mode' => 'read', 'run' => 'execute_list_field_types', 'perm' => 'check_read_permission', 'slug' => 'emcp-tools/list-acf-field-groups', 'cpt_tax' => false, 'desc' => __( 'List the field types registered by the active ACF build, including Pro status and supported settings. No arguments.', 'emcp-tools' ) ),
 			'list-field-groups'  => array( 'mode' => 'read', 'run' => 'execute_list_field_groups', 'perm' => 'check_read_permission', 'slug' => 'emcp-tools/list-acf-field-groups', 'cpt_tax' => false, 'desc' => __( 'List ACF field groups (key, title, active state, field count). No arguments.', 'emcp-tools' ) ),
 			'get-field-group'    => array( 'mode' => 'read', 'run' => 'execute_get_field_group', 'perm' => 'check_read_permission', 'slug' => 'emcp-tools/get-acf-field-group', 'cpt_tax' => false, 'desc' => __( 'Get one field group\'s location rules + recursive field tree. arguments: { key }.', 'emcp-tools' ) ),
 			'list-options-pages' => array( 'mode' => 'read', 'run' => 'execute_list_options_pages', 'perm' => 'check_read_permission', 'slug' => 'emcp-tools/list-acf-options-pages', 'cpt_tax' => false, 'desc' => __( 'List registered ACF options pages (PRO feature; empty on free ACF). No arguments.', 'emcp-tools' ) ),
@@ -92,6 +90,8 @@ class EMCP_Tools_ACF_Abilities {
 			'get-taxonomy'       => array( 'mode' => 'read', 'run' => 'execute_get_taxonomy', 'perm' => 'check_manage_permission', 'slug' => 'emcp-tools/get-acf-taxonomy', 'cpt_tax' => true, 'desc' => __( 'Get one ACF-managed taxonomy definition. arguments: { key }.', 'emcp-tools' ) ),
 			// Writes --------------------------------------------------------
 			'update-fields'      => array( 'mode' => 'write', 'run' => 'execute_update_fields', 'perm' => 'check_fields_permission', 'slug' => 'emcp-tools/update-acf-fields', 'cpt_tax' => false, 'desc' => __( 'Write ACF field values on a post or options page (incl. repeater/flexible/gallery rows). arguments: { post_id|options_page, fields: { name: value } }.', 'emcp-tools' ) ),
+			'validate-fields'    => array( 'mode' => 'write', 'run' => 'execute_validate_fields', 'perm' => 'check_batch_fields_permission', 'slug' => 'emcp-tools/update-acf-fields', 'cpt_tax' => false, 'desc' => __( 'Validate an agent-parsed import without writing. arguments: { items:[{client_ref, source?, data:{post_id|options_page, fields}}] }. Returns a deterministic plan_hash.', 'emcp-tools' ) ),
+			'batch-update-fields' => array( 'mode' => 'write', 'run' => 'execute_batch_update_fields', 'perm' => 'check_batch_fields_permission', 'slug' => 'emcp-tools/update-acf-fields', 'cpt_tax' => false, 'desc' => __( 'Apply a previously validated ACF import. arguments: { items:[...], plan_hash, confirm:true }. The exact payload must match the preview.', 'emcp-tools' ) ),
 			'create-field-group' => array( 'mode' => 'write', 'run' => 'execute_create_field_group', 'perm' => 'check_manage_permission', 'slug' => 'emcp-tools/create-acf-field-group', 'cpt_tax' => false, 'desc' => __( 'Create a field group with fields + location rules. arguments: { title, fields: [...], location: [[...]] }.', 'emcp-tools' ) ),
 			'update-field-group' => array( 'mode' => 'write', 'run' => 'execute_update_field_group', 'perm' => 'check_manage_permission', 'slug' => 'emcp-tools/update-acf-field-group', 'cpt_tax' => false, 'desc' => __( 'Edit a stored field group: settings, new fields, or per-field setting changes (no deletes/renames). arguments: { key, ... }.', 'emcp-tools' ) ),
 			'create-post-type'   => array( 'mode' => 'write', 'run' => 'execute_create_post_type', 'perm' => 'check_manage_permission', 'slug' => 'emcp-tools/create-acf-post-type', 'cpt_tax' => true, 'desc' => __( 'Register a Custom Post Type through ACF (data, no code). arguments: { post_type, title, ... }.', 'emcp-tools' ) ),
@@ -114,7 +114,7 @@ class EMCP_Tools_ACF_Abilities {
 				'input_schema'        => array(
 					'type'       => 'object',
 					'properties' => array(
-						'operation' => array( 'type' => 'string', 'description' => __( 'The read operation to run. Omit to list operations. One of: list-field-groups, get-field-group, list-options-pages, get-fields, list-post-types, get-post-type, list-taxonomies, get-taxonomy.', 'emcp-tools' ) ),
+						'operation' => array( 'type' => 'string', 'description' => __( 'The read operation to run. Omit to list operations. One of: list-field-types, list-field-groups, get-field-group, list-options-pages, get-fields, list-post-types, get-post-type, list-taxonomies, get-taxonomy.', 'emcp-tools' ) ),
 						'arguments' => array( 'type' => 'object', 'description' => __( 'Arguments for the chosen operation (see the catalog returned when operation is omitted).', 'emcp-tools' ) ),
 					),
 				),
@@ -139,7 +139,7 @@ class EMCP_Tools_ACF_Abilities {
 				'input_schema'        => array(
 					'type'       => 'object',
 					'properties' => array(
-						'operation' => array( 'type' => 'string', 'description' => __( 'The write operation to run. Omit to list operations. One of: update-fields, create-field-group, update-field-group, create-post-type, update-post-type, create-taxonomy, update-taxonomy.', 'emcp-tools' ) ),
+						'operation' => array( 'type' => 'string', 'description' => __( 'The write operation to run. Omit to list operations. Includes update-fields, validate-fields, batch-update-fields, and schema authoring operations.', 'emcp-tools' ) ),
 						'arguments' => array( 'type' => 'object', 'description' => __( 'Arguments for the chosen operation (see the catalog returned when operation is omitted).', 'emcp-tools' ) ),
 					),
 				),
@@ -317,6 +317,20 @@ class EMCP_Tools_ACF_Abilities {
 		return ! $post_id || current_user_can( 'edit_post', $post_id );
 	}
 
+	/** Check every structured import target independently. */
+	public function check_batch_fields_permission( $input = null ): bool {
+		if ( ! is_array( $input ) || empty( $input['items'] ) || ! is_array( $input['items'] ) ) {
+			return current_user_can( 'edit_posts' ) || current_user_can( 'manage_options' );
+		}
+		foreach ( $input['items'] as $item ) {
+			$data = is_array( $item ) && isset( $item['data'] ) && is_array( $item['data'] ) ? $item['data'] : array();
+			if ( ! $this->check_fields_permission( $data ) ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	/**
 	 * Field-group authoring permission: field groups are site-wide definitions.
 	 *
@@ -325,6 +339,37 @@ class EMCP_Tools_ACF_Abilities {
 	 */
 	public function check_manage_permission(): bool {
 		return current_user_can( 'manage_options' );
+	}
+
+	// -------------------------------------------------------------------
+	// list-acf-field-types
+	// -------------------------------------------------------------------
+
+	/**
+	 * Reports the exact field registry exposed by the active ACF runtime.
+	 *
+	 * @param array $input Unused dispatcher arguments.
+	 * @return array
+	 */
+	public function execute_list_field_types( $input ): array {
+		$rows = array();
+		if ( function_exists( 'acf_get_field_types' ) ) {
+			foreach ( (array) acf_get_field_types() as $name => $field_type ) {
+				$vars = is_object( $field_type ) ? get_object_vars( $field_type ) : array();
+				$rows[] = array(
+					'name'     => (string) $name,
+					'category' => (string) ( $vars['category'] ?? '' ),
+					'pro'      => ! empty( $vars['pro'] ),
+					'settings' => array_keys( (array) ( $vars['defaults'] ?? array() ) ),
+				);
+			}
+		}
+
+		return array(
+			'field_types' => $rows,
+			'total'       => count( $rows ),
+			'pro'         => self::is_pro(),
+		);
 	}
 
 	// -------------------------------------------------------------------
@@ -412,14 +457,21 @@ class EMCP_Tools_ACF_Abilities {
 	 */
 	private function format_field( $field, int $depth = 0 ): array {
 		$field = (array) $field;
+		$name  = (string) ( $field['_name'] ?? $field['name'] ?? '' );
 		$out   = array(
 			'key'      => (string) ( $field['key'] ?? '' ),
-			'name'     => (string) ( $field['name'] ?? '' ),
+			'name'     => $name,
 			'label'    => (string) ( $field['label'] ?? '' ),
 			'type'     => (string) ( $field['type'] ?? '' ),
 			'required' => ! empty( $field['required'] ),
 		);
-		foreach ( array( 'instructions', 'choices', 'default_value', 'return_format', 'min', 'max', 'multiple', 'allow_null', 'post_type', 'taxonomy' ) as $setting ) {
+		if ( isset( $field['name'] ) && $name !== (string) $field['name'] ) {
+			$out['qualified_name'] = (string) $field['name'];
+		}
+		foreach ( $this->mutable_field_settings() as $setting ) {
+			if ( in_array( $setting, array( 'label', 'required' ), true ) ) {
+				continue;
+			}
 			if ( isset( $field[ $setting ] ) && '' !== $field[ $setting ] && array() !== $field[ $setting ] ) {
 				$out[ $setting ] = $field[ $setting ];
 			}
@@ -469,6 +521,9 @@ class EMCP_Tools_ACF_Abilities {
 		$rows  = array();
 		foreach ( (array) $pages as $page ) {
 			$page   = (array) $page;
+			if ( empty( $page['menu_slug'] ) && empty( $page['page_title'] ) ) {
+				continue;
+			}
 			$rows[] = array(
 				'menu_slug'   => (string) ( $page['menu_slug'] ?? '' ),
 				'page_title'  => (string) ( $page['page_title'] ?? '' ),
@@ -530,6 +585,361 @@ class EMCP_Tools_ACF_Abilities {
 	// update-acf-fields
 	// -------------------------------------------------------------------
 
+	/** Preview a structured ACF value import without writing. */
+	public function execute_validate_fields( $input ) {
+		$items = EMCP_Tools_Structured_Import::normalize_items( $input['items'] ?? null );
+		if ( is_wp_error( $items ) ) {
+			return $items;
+		}
+		$plan = $this->build_field_import_plan( $items );
+		return array(
+			'dry_run'  => true,
+			'valid'    => $plan['valid'],
+			'plan_hash' => EMCP_Tools_Structured_Import::plan_hash( 'acf-fields-v1', $items ),
+			'total'    => count( $items ),
+			'results'  => $plan['results'],
+		);
+	}
+
+	/** Apply a structured ACF import only when the exact preview was approved. */
+	public function execute_batch_update_fields( $input ) {
+		if ( true !== ( $input['confirm'] ?? null ) ) {
+			return new \WP_Error( 'confirmation_required', __( 'Pass confirm:true to apply an ACF field import.', 'emcp-tools' ) );
+		}
+		$items = EMCP_Tools_Structured_Import::normalize_items( $input['items'] ?? null );
+		if ( is_wp_error( $items ) ) {
+			return $items;
+		}
+		$expected = EMCP_Tools_Structured_Import::plan_hash( 'acf-fields-v1', $items );
+		$matched  = EMCP_Tools_Structured_Import::require_plan_hash( $input['plan_hash'] ?? '', $expected );
+		if ( is_wp_error( $matched ) ) {
+			return $matched;
+		}
+		$plan = $this->build_field_import_plan( $items );
+		if ( ! $plan['valid'] ) {
+			return new \WP_Error( 'import_validation_failed', __( 'The import contains invalid fields or values. Nothing was written.', 'emcp-tools' ), array( 'plan_hash' => $expected, 'results' => $plan['results'] ) );
+		}
+
+		$results = array();
+		foreach ( $items as $item ) {
+			$out = $this->execute_update_fields( $item['data'] );
+			if ( is_wp_error( $out ) ) {
+				$results[] = array( 'client_ref' => $item['client_ref'], 'source' => $item['source'], 'status' => 'error', 'error' => $out->get_error_code(), 'message' => $out->get_error_message() );
+				continue;
+			}
+			$results[] = array(
+				'client_ref' => $item['client_ref'],
+				'source'     => $item['source'],
+				'status'     => empty( $out['updated'] ) ? 'skipped' : 'updated',
+				'target'     => $out['target'],
+				'updated'    => $out['updated'],
+				'values'     => $out['values'],
+			);
+		}
+		return array( 'applied' => true, 'plan_hash' => $expected, 'total' => count( $items ), 'results' => $results );
+	}
+
+	/** Resolve targets and fields, then validate every value before any write. */
+	private function build_field_import_plan( array $items ): array {
+		$results = array();
+		$valid   = true;
+		foreach ( $items as $item ) {
+			$data   = $item['data'];
+			$errors = array();
+			$target = $this->resolve_target( $data );
+			if ( is_wp_error( $target ) ) {
+				$errors[] = array( 'field' => null, 'reason' => $target->get_error_code(), 'message' => $target->get_error_message() );
+			} elseif ( empty( $data['fields'] ) || ! is_array( $data['fields'] ) ) {
+				$errors[] = array( 'field' => null, 'reason' => 'missing_fields', 'message' => __( 'A non-empty fields object is required.', 'emcp-tools' ) );
+			} else {
+				foreach ( $data['fields'] as $name_or_key => $value ) {
+					$field = $this->resolve_field( (string) $name_or_key, $target );
+					if ( ! $field ) {
+						$errors[] = array( 'field' => (string) $name_or_key, 'reason' => 'field_not_found' );
+						continue;
+					}
+					$reason = $this->validate_field_value( $value, $field, 0 );
+					if ( null !== $reason ) {
+						$errors[] = array( 'field' => (string) $name_or_key, 'reason' => $reason );
+					}
+				}
+			}
+			if ( $errors ) {
+				$valid = false;
+			}
+			$results[] = array(
+				'client_ref' => $item['client_ref'],
+				'source'     => $item['source'],
+				'status'     => $errors ? 'error' : 'ready',
+				'target'     => is_wp_error( $target ) ? null : (string) $target,
+				'errors'     => $errors,
+			);
+		}
+		return array( 'valid' => $valid, 'results' => $results );
+	}
+
+	/** Type-aware validation for values already extracted by the agent. */
+	private function validate_field_value( $value, array $field, int $depth ): ?string {
+		if ( $depth > self::MAX_DEPTH ) {
+			return 'value_nested_too_deeply';
+		}
+		$type = (string) ( $field['type'] ?? '' );
+		if ( in_array( $type, self::PRO_FIELD_TYPES, true ) && ! self::is_pro() ) {
+			return 'acf_pro_required';
+		}
+		if ( in_array( $type, array( 'accordion', 'message', 'output', 'separator', 'tab' ), true ) ) {
+			return 'field_does_not_store_value';
+		}
+
+		$is_empty = null === $value || '' === $value || ( is_array( $value ) && array() === $value );
+		if ( $is_empty && ! empty( $field['required'] ) ) {
+			return 'required_value_missing';
+		}
+		if ( $is_empty && ! in_array( $type, array( 'flexible_content', 'gallery', 'group', 'relationship', 'repeater' ), true ) ) {
+			return null;
+		}
+
+		if ( in_array( $type, array( 'text', 'textarea', 'password', 'wysiwyg' ), true ) ) {
+			if ( ! is_scalar( $value ) ) {
+				return 'string_required';
+			}
+			$maxlength = absint( $field['maxlength'] ?? 0 );
+			$length    = function_exists( 'mb_strlen' ) ? mb_strlen( (string) $value ) : strlen( (string) $value );
+			if ( $maxlength && $length > $maxlength ) {
+				return 'above_maximum_length';
+			}
+		}
+		if ( 'email' === $type ) {
+			if ( ! is_string( $value ) || false === filter_var( $value, FILTER_VALIDATE_EMAIL ) ) {
+				return 'invalid_email';
+			}
+		}
+		if ( in_array( $type, array( 'url', 'oembed' ), true ) && ! $this->is_valid_http_url( $value ) ) {
+			return 'invalid_url';
+		}
+		if ( in_array( $type, array( 'number', 'range' ), true ) ) {
+			if ( ! is_numeric( $value ) ) {
+				return 'number_required';
+			}
+			if ( '' !== (string) ( $field['min'] ?? '' ) && (float) $value < (float) $field['min'] ) { return 'below_minimum'; }
+			if ( '' !== (string) ( $field['max'] ?? '' ) && (float) $value > (float) $field['max'] ) { return 'above_maximum'; }
+			$step = (float) ( $field['step'] ?? 0 );
+			if ( $step > 0 ) {
+				$base     = '' !== (string) ( $field['min'] ?? '' ) ? (float) $field['min'] : 0.0;
+				$multiple = ( (float) $value - $base ) / $step;
+				if ( abs( $multiple - round( $multiple ) ) > 0.000000001 ) {
+					return 'invalid_step';
+				}
+			}
+		}
+		if ( in_array( $type, array( 'select', 'radio', 'button_group', 'checkbox' ), true ) ) {
+			$expects_array = 'checkbox' === $type || ( 'select' === $type && ! empty( $field['multiple'] ) );
+			if ( $expects_array !== is_array( $value ) ) {
+				return $expects_array ? 'array_required' : 'scalar_required';
+			}
+			$values  = is_array( $value ) ? $value : array( $value );
+			$choices = array_map( 'strval', array_keys( (array) ( $field['choices'] ?? array() ) ) );
+			$custom  = ( 'checkbox' === $type && ! empty( $field['allow_custom'] ) ) || ( 'radio' === $type && ! empty( $field['other_choice'] ) ) || ( 'select' === $type && ! empty( $field['create_options'] ) );
+			foreach ( $values as $choice ) {
+				if ( ! $custom && ! in_array( (string) $choice, $choices, true ) ) { return 'unknown_choice'; }
+			}
+		}
+		if ( 'true_false' === $type && ! in_array( $value, array( true, false, 0, 1, '0', '1' ), true ) ) {
+			return 'boolean_required';
+		}
+		if ( 'link' === $type ) {
+			if ( ! is_array( $value ) || ! isset( $value['url'] ) || ! $this->is_valid_http_url( $value['url'] ) ) {
+				return 'invalid_link';
+			}
+			if ( isset( $value['target'] ) && ! in_array( (string) $value['target'], array( '', '_blank', '_self' ), true ) ) {
+				return 'invalid_link_target';
+			}
+		}
+		if ( in_array( $type, array( 'image', 'file' ), true ) ) {
+			$id = is_array( $value ) ? absint( $value['ID'] ?? $value['id'] ?? 0 ) : absint( $value );
+			if ( ! $id || 'attachment' !== get_post_type( $id ) ) { return 'attachment_not_found'; }
+			if ( 'image' === $type && function_exists( 'wp_attachment_is_image' ) && ! wp_attachment_is_image( $id ) ) { return 'image_attachment_required'; }
+			$media_reason = $this->validate_attachment_constraints( $id, $field, 'image' === $type );
+			if ( null !== $media_reason ) { return $media_reason; }
+		}
+		if ( 'gallery' === $type ) {
+			if ( ! is_array( $value ) ) { return 'invalid_gallery'; }
+			$reason = $this->validate_count( count( $value ), $field );
+			if ( null !== $reason ) { return $reason; }
+			foreach ( $value as $id ) {
+				$reason = $this->validate_field_value( $id, array_merge( $field, array( 'type' => 'image', 'required' => 0 ) ), $depth + 1 );
+				if ( null !== $reason ) { return $reason; }
+			}
+		}
+		if ( in_array( $type, array( 'post_object', 'relationship', 'page_link' ), true ) ) {
+			$multiple = 'relationship' === $type || ! empty( $field['multiple'] );
+			if ( $multiple !== is_array( $value ) ) { return $multiple ? 'array_required' : 'scalar_required'; }
+			$ids = is_array( $value ) ? $value : array( $value );
+			if ( 'relationship' === $type ) {
+				$reason = $this->validate_count( count( $ids ), $field );
+				if ( null !== $reason ) { return $reason; }
+			}
+			foreach ( $ids as $id ) {
+				$post = absint( $id ) ? get_post( absint( $id ) ) : null;
+				if ( ! $post ) { return 'related_post_not_found'; }
+				$allowed = array_filter( array_map( 'strval', (array) ( $field['post_type'] ?? array() ) ) );
+				if ( $allowed && ! in_array( (string) $post->post_type, $allowed, true ) ) { return 'related_post_type_not_allowed'; }
+			}
+		}
+		if ( 'taxonomy' === $type ) {
+			$multiple = ! empty( $field['multiple'] ) || in_array( (string) ( $field['field_type'] ?? '' ), array( 'checkbox', 'multi_select' ), true );
+			if ( $multiple !== is_array( $value ) ) { return $multiple ? 'array_required' : 'scalar_required'; }
+			$ids = is_array( $value ) ? $value : array( $value );
+			foreach ( $ids as $id ) {
+				$term = absint( $id ) ? get_term( absint( $id ) ) : null;
+				if ( ! $term || is_wp_error( $term ) ) { return 'term_not_found'; }
+				if ( ! empty( $field['taxonomy'] ) && (string) $term->taxonomy !== (string) $field['taxonomy'] ) { return 'term_taxonomy_not_allowed'; }
+			}
+		}
+		if ( 'user' === $type ) {
+			$multiple = ! empty( $field['multiple'] );
+			if ( $multiple !== is_array( $value ) ) { return $multiple ? 'array_required' : 'scalar_required'; }
+			$ids = is_array( $value ) ? $value : array( $value );
+			foreach ( $ids as $id ) {
+				$user = absint( $id ) ? get_userdata( absint( $id ) ) : null;
+				if ( ! $user ) { return 'user_not_found'; }
+				$roles = array_filter( array_map( 'strval', (array) ( $field['role'] ?? array() ) ) );
+				if ( $roles && ! array_intersect( $roles, (array) ( $user->roles ?? array() ) ) ) { return 'user_role_not_allowed'; }
+			}
+		}
+		if ( 'google_map' === $type && ( ! is_array( $value ) || ! isset( $value['lat'], $value['lng'] ) || ! is_numeric( $value['lat'] ) || ! is_numeric( $value['lng'] ) || (float) $value['lat'] < -90 || (float) $value['lat'] > 90 || (float) $value['lng'] < -180 || (float) $value['lng'] > 180 ) ) { return 'invalid_map'; }
+		if ( 'date_picker' === $type && ! $this->is_valid_date( $value ) ) { return 'invalid_date'; }
+		if ( 'date_time_picker' === $type && ! $this->is_valid_date_time( $value ) ) { return 'invalid_date_time'; }
+		if ( 'time_picker' === $type && ! $this->is_valid_time( $value ) ) { return 'invalid_time'; }
+		if ( 'color_picker' === $type && ( ! is_string( $value ) || ! preg_match( ! empty( $field['enable_opacity'] ) ? '/^#[0-9a-f]{3}(?:[0-9a-f]{3}(?:[0-9a-f]{2})?)?$/i' : '/^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i', $value ) ) ) { return 'invalid_color'; }
+		if ( 'icon_picker' === $type && ( ! is_array( $value ) || empty( $value['type'] ) || ! isset( $value['value'] ) || '' === (string) $value['value'] ) ) { return 'invalid_icon'; }
+		if ( 'group' === $type ) {
+			if ( ! is_array( $value ) ) { return 'invalid_group'; }
+			$reason = $this->validate_sub_fields( $value, (array) ( $field['sub_fields'] ?? array() ), $depth + 1 );
+			if ( null !== $reason ) { return $reason; }
+		}
+		if ( 'clone' === $type ) {
+			if ( ! is_array( $value ) ) { return 'invalid_clone'; }
+			$reason = $this->validate_sub_fields( $value, (array) ( $field['sub_fields'] ?? array() ), $depth + 1 );
+			if ( null !== $reason ) { return $reason; }
+		}
+		if ( 'repeater' === $type ) {
+			if ( ! is_array( $value ) ) { return 'invalid_repeater'; }
+			$reason = $this->validate_count( count( $value ), $field );
+			if ( null !== $reason ) { return $reason; }
+			foreach ( $value as $row ) {
+				if ( ! is_array( $row ) ) { return 'invalid_repeater_row'; }
+				$reason = $this->validate_sub_fields( $row, (array) ( $field['sub_fields'] ?? array() ), $depth + 1 );
+				if ( null !== $reason ) { return $reason; }
+			}
+		}
+		if ( 'flexible_content' === $type ) {
+			$reason = $this->validate_flexible_rows( $value, $field );
+			if ( null !== $reason ) { return $reason; }
+			foreach ( $value as $row ) {
+				foreach ( (array) ( $field['layouts'] ?? array() ) as $layout ) {
+					if ( ( $layout['name'] ?? '' ) === $row['acf_fc_layout'] ) {
+						$reason = $this->validate_sub_fields( $row, (array) ( $layout['sub_fields'] ?? array() ), $depth + 1 );
+						if ( null !== $reason ) { return $reason; }
+					}
+				}
+			}
+		}
+		return null;
+	}
+
+	private function validate_count( int $count, array $field ): ?string {
+		$min = absint( $field['min'] ?? 0 );
+		$max = absint( $field['max'] ?? 0 );
+		if ( $min && $count < $min ) { return 'below_minimum_count'; }
+		if ( $max && $count > $max ) { return 'above_maximum_count'; }
+		return null;
+	}
+
+	private function is_valid_http_url( $value ): bool {
+		if ( ! is_string( $value ) || false === filter_var( $value, FILTER_VALIDATE_URL ) ) {
+			return false;
+		}
+		$parts  = function_exists( 'wp_parse_url' ) ? wp_parse_url( $value ) : parse_url( $value );
+		$scheme = is_array( $parts ) ? strtolower( (string) ( $parts['scheme'] ?? '' ) ) : '';
+		return in_array( $scheme, array( 'http', 'https' ), true );
+	}
+
+	private function is_valid_date( $value ): bool {
+		if ( ! is_string( $value ) ) { return false; }
+		$format = false !== strpos( $value, '-' ) ? 'Y-m-d' : 'Ymd';
+		$date   = \DateTime::createFromFormat( '!' . $format, $value );
+		return $date && $date->format( $format ) === $value;
+	}
+
+	private function is_valid_date_time( $value ): bool {
+		if ( ! is_string( $value ) ) { return false; }
+		$date = \DateTime::createFromFormat( '!Y-m-d H:i:s', $value );
+		return $date && $date->format( 'Y-m-d H:i:s' ) === $value;
+	}
+
+	private function is_valid_time( $value ): bool {
+		if ( ! is_string( $value ) ) { return false; }
+		$format = 5 === strlen( $value ) ? 'H:i' : 'H:i:s';
+		$time   = \DateTime::createFromFormat( '!' . $format, $value );
+		return $time && $time->format( $format ) === $value;
+	}
+
+	private function validate_attachment_constraints( int $id, array $field, bool $image ): ?string {
+		$mime = function_exists( 'get_post_mime_type' ) ? (string) get_post_mime_type( $id ) : '';
+		if ( ! empty( $field['mime_types'] ) && '' !== $mime ) {
+			$allowed = array_filter( array_map( 'trim', explode( ',', strtolower( (string) $field['mime_types'] ) ) ) );
+			$ext     = strtolower( (string) pathinfo( (string) ( function_exists( 'wp_get_attachment_url' ) ? wp_get_attachment_url( $id ) : '' ), PATHINFO_EXTENSION ) );
+			if ( ! in_array( strtolower( $mime ), $allowed, true ) && ! in_array( $ext, $allowed, true ) ) { return 'attachment_type_not_allowed'; }
+		}
+		if ( function_exists( 'get_attached_file' ) ) {
+			$path = get_attached_file( $id );
+			if ( is_string( $path ) && is_file( $path ) ) {
+				$size = filesize( $path );
+				if ( false !== $size ) {
+					$bytes_per_megabyte = defined( 'MB_IN_BYTES' ) ? MB_IN_BYTES : 1048576;
+					$megabytes          = $size / $bytes_per_megabyte;
+					$min_size  = (float) ( $field['min_size'] ?? 0 );
+					$max_size  = (float) ( $field['max_size'] ?? 0 );
+					if ( $min_size > 0 && $megabytes < $min_size ) { return 'attachment_below_minimum_size'; }
+					if ( $max_size > 0 && $megabytes > $max_size ) { return 'attachment_above_maximum_size'; }
+				}
+			}
+		}
+		if ( $image && function_exists( 'wp_get_attachment_metadata' ) ) {
+			$meta = (array) wp_get_attachment_metadata( $id );
+			foreach ( array( 'width', 'height' ) as $dimension ) {
+				$actual = absint( $meta[ $dimension ] ?? 0 );
+				$min    = absint( $field[ 'min_' . $dimension ] ?? 0 );
+				$max    = absint( $field[ 'max_' . $dimension ] ?? 0 );
+				if ( $min && $actual < $min ) { return 'image_below_minimum_' . $dimension; }
+				if ( $max && $actual > $max ) { return 'image_above_maximum_' . $dimension; }
+			}
+		}
+		return null;
+	}
+
+	private function validate_sub_fields( array $row, array $sub_fields, int $depth ): ?string {
+		$known = array( 'acf_fc_layout' => true );
+		foreach ( $sub_fields as $sub ) {
+			$key       = (string) ( $sub['key'] ?? '' );
+			$name      = (string) ( $sub['name'] ?? '' );
+			$input_name = (string) ( $sub['_name'] ?? $name );
+			$known[ $key ] = true;
+			$known[ $name ] = true;
+			$known[ $input_name ] = true;
+			if ( array_key_exists( $key, $row ) ) { $reason = $this->validate_field_value( $row[ $key ], $sub, $depth ); }
+			elseif ( array_key_exists( $name, $row ) ) { $reason = $this->validate_field_value( $row[ $name ], $sub, $depth ); }
+			elseif ( array_key_exists( $input_name, $row ) ) { $reason = $this->validate_field_value( $row[ $input_name ], $sub, $depth ); }
+			else { $reason = ! empty( $sub['required'] ) ? 'required_sub_field_missing' : null; }
+			if ( null !== $reason ) { return $reason; }
+		}
+		foreach ( $row as $key => $_value ) {
+			if ( ! isset( $known[ (string) $key ] ) ) { return 'unknown_sub_field'; }
+		}
+		return null;
+	}
+
 	/**
 	 * @param array $input
 	 * @return array|\WP_Error
@@ -556,17 +966,10 @@ class EMCP_Tools_ACF_Abilities {
 				$skipped[] = array( 'field' => $name_or_key, 'reason' => 'field_not_found' );
 				continue;
 			}
-			$type = (string) ( $field['type'] ?? '' );
-			if ( in_array( $type, self::PRO_FIELD_TYPES, true ) && ! self::is_pro() ) {
-				$skipped[] = array( 'field' => $name_or_key, 'reason' => 'acf_pro_required' );
+			$validation_error = $this->validate_field_value( $value, $field, 0 );
+			if ( null !== $validation_error ) {
+				$skipped[] = array( 'field' => $name_or_key, 'reason' => $validation_error );
 				continue;
-			}
-			if ( 'flexible_content' === $type ) {
-				$layout_error = $this->validate_flexible_rows( $value, $field );
-				if ( null !== $layout_error ) {
-					$skipped[] = array( 'field' => $name_or_key, 'reason' => $layout_error );
-					continue;
-				}
 			}
 
 			// Capture the prior raw value (by key) before overwriting, for rollback.
@@ -619,11 +1022,17 @@ class EMCP_Tools_ACF_Abilities {
 		if ( ! is_array( $rows ) ) {
 			return 'invalid_flexible_value';
 		}
+		$count_reason = $this->validate_count( count( $rows ), $field );
+		if ( null !== $count_reason ) {
+			return $count_reason;
+		}
 		$layout_names = array();
+		$layout_counts = array();
 		foreach ( (array) ( $field['layouts'] ?? array() ) as $layout ) {
 			$layout = (array) $layout;
 			if ( ! empty( $layout['name'] ) ) {
 				$layout_names[] = (string) $layout['name'];
+				$layout_counts[ (string) $layout['name'] ] = 0;
 			}
 		}
 		foreach ( $rows as $row ) {
@@ -632,6 +1041,14 @@ class EMCP_Tools_ACF_Abilities {
 			}
 			if ( ! in_array( (string) $row['acf_fc_layout'], $layout_names, true ) ) {
 				return 'unknown_layout';
+			}
+			++$layout_counts[ (string) $row['acf_fc_layout'] ];
+		}
+		foreach ( (array) ( $field['layouts'] ?? array() ) as $layout ) {
+			$name   = (string) ( $layout['name'] ?? '' );
+			$reason = $this->validate_count( (int) ( $layout_counts[ $name ] ?? 0 ), (array) $layout );
+			if ( null !== $reason ) {
+				return 'layout_' . $reason;
 			}
 		}
 		return null;
@@ -969,10 +1386,22 @@ class EMCP_Tools_ACF_Abilities {
 	 */
 	private function mutable_field_settings(): array {
 		return array(
-			'label', 'instructions', 'required', 'choices', 'default_value',
-			'placeholder', 'min', 'max', 'step', 'return_format', 'allow_null',
-			'multiple', 'ui', 'post_type', 'taxonomy', 'mime_types', 'layout',
-			'button_label', 'preview_size', 'display_format', 'new_lines',
+			'label', 'instructions', 'required', 'conditional_logic', 'wrapper', 'aria-label',
+			'choices', 'default_value', 'placeholder', 'maxlength', 'prepend', 'append',
+			'min', 'max', 'step', 'rows', 'new_lines', 'return_format', 'allow_null',
+			'multiple', 'ui', 'ajax', 'create_options', 'save_options', 'layout',
+			'allow_custom', 'save_custom', 'toggle', 'custom_choice_button_text',
+			'other_choice', 'save_other_choice', 'message', 'ui_on_text', 'ui_off_text',
+			'post_type', 'taxonomy', 'allow_archives', 'filters', 'elements',
+			'bidirectional', 'bidirectional_target', 'field_type', 'add_term', 'load_terms',
+			'save_terms', 'role', 'library', 'mime_types', 'preview_size', 'insert',
+			'min_width', 'min_height', 'min_size', 'max_width', 'max_height', 'max_size',
+			'tabs', 'toolbar', 'media_upload', 'delay', 'width', 'height',
+			'center_lat', 'center_lng', 'zoom', 'display_format', 'first_day',
+			'default_to_current_date', 'enable_opacity', 'custom_palette_source',
+			'palette_colors', 'show_color_wheel', 'open', 'multi_expand', 'endpoint',
+			'placement', 'selected', 'button_label', 'rows_per_page', 'pagination',
+			'collapsed', 'clone', 'prefix_label', 'prefix_name', 'display', 'esc_html', 'html',
 		);
 	}
 
@@ -999,6 +1428,9 @@ class EMCP_Tools_ACF_Abilities {
 		}
 		if ( is_bool( $value ) || is_int( $value ) || is_float( $value ) ) {
 			return $value;
+		}
+		if ( in_array( $setting, array( 'message', 'html' ), true ) && function_exists( 'wp_kses_post' ) ) {
+			return wp_kses_post( (string) $value );
 		}
 		return sanitize_text_field( (string) $value );
 	}
@@ -1044,6 +1476,19 @@ class EMCP_Tools_ACF_Abilities {
 					$field[ $setting ] = $this->sanitize_field_setting( $setting, $def[ $setting ] );
 				}
 			}
+			if ( 'clone' === $type ) {
+				$clone = array_filter( array_map( 'strval', (array) ( $field['clone'] ?? array() ) ) );
+				if ( ! $clone ) {
+					return new \WP_Error( 'invalid_field', __( 'A clone field needs at least one source field or field-group key in "clone".', 'emcp-tools' ) );
+				}
+				foreach ( $clone as $source_key ) {
+					$exists = 0 === strpos( $source_key, 'group_' ) ? acf_get_field_group( $source_key ) : acf_get_field( $source_key );
+					if ( ! $exists ) {
+						return new \WP_Error( 'invalid_field', sprintf( /* translators: %s: ACF field/group key */ __( 'Clone source "%s" was not found.', 'emcp-tools' ), $source_key ) );
+					}
+				}
+				$field['clone'] = array_values( $clone );
+			}
 
 			if ( ! empty( $def['sub_fields'] ) && is_array( $def['sub_fields'] ) ) {
 				$subs = $this->sanitize_field_defs( $def['sub_fields'], $depth + 1 );
@@ -1060,11 +1505,14 @@ class EMCP_Tools_ACF_Abilities {
 					if ( '' === $layout_name ) {
 						return new \WP_Error( 'invalid_field', __( 'Every flexible content layout needs a "name".', 'emcp-tools' ) );
 					}
+					$display = isset( $layout['display'] ) && in_array( $layout['display'], array( 'block', 'row', 'table' ), true ) ? $layout['display'] : 'block';
 					$layout_row = array(
 						'key'     => uniqid( 'layout_' ),
 						'name'    => $layout_name,
 						'label'   => sanitize_text_field( (string) ( $layout['label'] ?? $layout_name ) ),
-						'display' => 'block',
+						'display' => $display,
+						'min'     => absint( $layout['min'] ?? 0 ),
+						'max'     => absint( $layout['max'] ?? 0 ),
 					);
 					if ( ! empty( $layout['sub_fields'] ) && is_array( $layout['sub_fields'] ) ) {
 						$subs = $this->sanitize_field_defs( $layout['sub_fields'], $depth + 1 );

@@ -40,6 +40,11 @@ function emcp_test_reset(): void {
 		'updated_groups'     => array(),
 		'updated_fields'     => array(),
 		'posts'              => array(),   // post_id => post-ish object.
+		'terms'              => array(),   // term_id => term-like object.
+		'users'              => array(),   // user_id => user-like object.
+		'attachment_meta'    => array(),   // attachment_id => image metadata.
+		'attachment_urls'    => array(),   // attachment_id => URL.
+		'post_mime_types'    => array(),   // attachment_id => MIME type.
 		'options_pages'      => array(),
 		'abilities'          => array(),   // name => registration args.
 		'options'            => array(),   // option name => value (get_option/update_option).
@@ -151,6 +156,50 @@ function current_user_can( $cap, $object_id = null ): bool {
 
 function get_post( $post_id ) {
 	return $GLOBALS['emcp_test']['posts'][ (int) $post_id ] ?? null;
+}
+
+if ( ! function_exists( 'get_post_type' ) ) {
+	function get_post_type( $post = null ) {
+		$post = is_object( $post ) ? $post : get_post( $post );
+		return $post ? (string) $post->post_type : false;
+	}
+}
+
+if ( ! function_exists( 'wp_attachment_is_image' ) ) {
+	function wp_attachment_is_image( $post = 0 ): bool {
+		$mime = $GLOBALS['emcp_test']['post_mime_types'][ (int) $post ] ?? '';
+		return 0 === strpos( (string) $mime, 'image/' );
+	}
+}
+
+if ( ! function_exists( 'get_post_mime_type' ) ) {
+	function get_post_mime_type( $post = null ) {
+		return $GLOBALS['emcp_test']['post_mime_types'][ (int) $post ] ?? '';
+	}
+}
+
+if ( ! function_exists( 'wp_get_attachment_url' ) ) {
+	function wp_get_attachment_url( $post_id = 0 ) {
+		return $GLOBALS['emcp_test']['attachment_urls'][ (int) $post_id ] ?? false;
+	}
+}
+
+if ( ! function_exists( 'wp_get_attachment_metadata' ) ) {
+	function wp_get_attachment_metadata( $post_id = 0 ) {
+		return $GLOBALS['emcp_test']['attachment_meta'][ (int) $post_id ] ?? array();
+	}
+}
+
+if ( ! function_exists( 'get_term' ) ) {
+	function get_term( $term_id, $taxonomy = '' ) {
+		return $GLOBALS['emcp_test']['terms'][ (int) $term_id ] ?? null;
+	}
+}
+
+if ( ! function_exists( 'get_userdata' ) ) {
+	function get_userdata( $user_id ) {
+		return $GLOBALS['emcp_test']['users'][ (int) $user_id ] ?? false;
+	}
 }
 
 if ( ! function_exists( 'delete_post_meta' ) ) {

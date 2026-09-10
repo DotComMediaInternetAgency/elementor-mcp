@@ -2,7 +2,7 @@
 /**
  * WordPress Plugin lifecycle MCP abilities.
  *
- * Seven tools to discover, install (wordpress.org only), activate, deactivate,
+ * Seven tools to discover, install (wordpress.org or validated media ZIP), activate, deactivate,
  * update, and delete plugins. Built on WP core's plugin + upgrader APIs and
  * guarded by EMCP_Tools_Package_Guard (protected list, active checks, direct
  * filesystem). Reads ship enabled; the five mutation tools ship disabled-by-
@@ -179,17 +179,20 @@ class EMCP_Tools_Plugin_Abilities {
 			'emcp-tools/install-plugin',
 			array(
 				'label'               => __( 'Install Plugin', 'emcp-tools' ),
-				'description'         => __( 'Installs a plugin from the wordpress.org directory by slug (e.g. "contact-form-7"). Optionally activates it. Source is always wordpress.org, arbitrary URLs are not accepted.', 'emcp-tools' ),
+				'description'         => __( 'Installs a plugin from wordpress.org by slug, or from a validated ZIP previously stored by upload-media. Uploaded ZIPs require expected_sha256 and confirm:true. Arbitrary URLs and server paths are never accepted.', 'emcp-tools' ),
 				'category'            => 'emcp-tools',
 				'execute_callback'    => array( $this, 'execute_install_plugin' ),
 				'permission_callback' => array( $this, 'can_install' ),
 				'input_schema'        => array(
 					'type'       => 'object',
 					'properties' => array(
-						'slug'     => array( 'type' => 'string', 'description' => __( 'wordpress.org plugin slug.', 'emcp-tools' ) ),
-						'activate' => array( 'type' => 'boolean', 'description' => __( 'Activate after install. Default: false.', 'emcp-tools' ) ),
+						'slug'                     => array( 'type' => 'string', 'description' => __( 'wordpress.org plugin slug. Pass exactly one of slug or zip_attachment_id.', 'emcp-tools' ) ),
+						'zip_attachment_id'        => array( 'type' => 'integer', 'description' => __( 'Media attachment ID of a plugin ZIP uploaded with upload-media.', 'emcp-tools' ) ),
+						'expected_sha256'          => array( 'type' => 'string', 'description' => __( 'Required SHA-256 for an uploaded ZIP.', 'emcp-tools' ) ),
+						'confirm'                  => array( 'type' => 'boolean', 'description' => __( 'Must be true for an uploaded ZIP because it installs executable PHP.', 'emcp-tools' ) ),
+						'activate'                 => array( 'type' => 'boolean', 'description' => __( 'Activate after install. Default: false.', 'emcp-tools' ) ),
+						'delete_zip_after_install' => array( 'type' => 'boolean', 'description' => __( 'Delete the media attachment after a successful install. Default: false.', 'emcp-tools' ) ),
 					),
-					'required'   => array( 'slug' ),
 				),
 				'output_schema'       => array( 'type' => 'object', 'properties' => array(
 					'installed' => array( 'type' => 'boolean' ), 'activated' => array( 'type' => 'boolean' ),
@@ -207,10 +210,17 @@ class EMCP_Tools_Plugin_Abilities {
 	 */
 	public function execute_install_plugin( $input ) {
 		$slug = sanitize_key( $input['slug'] ?? '' );
-		if ( '' === $slug ) {
-			return new \WP_Error( 'missing_params', __( 'A plugin "slug" is required.', 'emcp-tools' ) );
+		$zip_attachment_id = absint( $input['zip_attachment_id'] ?? 0 );
+		if ( '' === $slug && ! $zip_attachment_id ) {
+			return new \WP_Error( 'missing_params', __( 'A plugin slug or zip_attachment_id is required.', 'emcp-tools' ) );
+		}
+		if ( '' !== $slug && $zip_attachment_id ) {
+			return new \WP_Error( 'invalid_package_source', __( 'Pass exactly one package source: slug or zip_attachment_id.', 'emcp-tools' ) );
 		}
 		$activate = ! empty( $input['activate'] );
+		if ( $zip_attachment_id && true !== ( $input['confirm'] ?? null ) ) {
+			return new \WP_Error( 'confirmation_required', __( 'Uploaded plugin ZIPs contain executable code. Pass confirm:true to install.', 'emcp-tools' ) );
+		}
 		if ( $activate && ! current_user_can( 'activate_plugins' ) ) {
 			return new \WP_Error( 'cannot_activate', __( 'You cannot activate plugins.', 'emcp-tools' ) );
 		}
@@ -218,13 +228,20 @@ class EMCP_Tools_Plugin_Abilities {
 		if ( is_wp_error( $ready ) ) {
 			return $ready;
 		}
-		$api = plugins_api( 'plugin_information', array( 'slug' => $slug, 'fields' => array( 'sections' => false ) ) );
-		if ( is_wp_error( $api ) ) {
-			return $api;
+		$package = null;
+		if ( $zip_attachment_id ) {
+			$package = EMCP_Tools_Package_Guard::prepare_uploaded_zip( $zip_attachment_id, (string) ( $input['expected_sha256'] ?? '' ), 'plugin' );
+			if ( is_wp_error( $package ) ) { return $package; }
+			$source = $package['path'];
+			$slug   = $package['root'];
+		} else {
+			$api = plugins_api( 'plugin_information', array( 'slug' => $slug, 'fields' => array( 'sections' => false ) ) );
+			if ( is_wp_error( $api ) ) { return $api; }
+			$source = $api->download_link;
 		}
 		$skin     = EMCP_Tools_Package_Guard::make_skin();
 		$upgrader = new \Plugin_Upgrader( $skin );
-		$result   = $upgrader->install( $api->download_link );
+		$result   = $upgrader->install( $source );
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
@@ -232,16 +249,28 @@ class EMCP_Tools_Plugin_Abilities {
 			return new \WP_Error( 'install_failed', __( 'Plugin installation failed.', 'emcp-tools' ) );
 		}
 		$file      = (string) $upgrader->plugin_info();
+		if ( $package && $file !== $package['main_file'] ) {
+			return new \WP_Error( 'installed_package_mismatch', __( 'The installed plugin basename does not match the validated archive.', 'emcp-tools' ) );
+		}
 		$activated = false;
+		$activation_error = null;
 		if ( $activate && '' !== $file ) {
 			$act = activate_plugin( $file );
 			$activated = ! is_wp_error( $act );
+			if ( is_wp_error( $act ) ) {
+				$activation_error = array( 'code' => $act->get_error_code(), 'message' => $act->get_error_message() );
+				if ( function_exists( 'deactivate_plugins' ) ) { deactivate_plugins( $file, true ); }
+			}
 		}
+		if ( $package && ! empty( $input['delete_zip_after_install'] ) && function_exists( 'wp_delete_attachment' ) ) { wp_delete_attachment( $zip_attachment_id, true ); }
 		return array(
 			'installed' => true,
 			'activated' => $activated,
 			'file'      => $file,
 			'slug'      => $slug,
+			'source'    => $package ? 'uploaded_zip' : 'wordpress.org',
+			'sha256'    => $package ? $package['sha256'] : null,
+			'activation_error' => $activation_error,
 			'messages'  => EMCP_Tools_Package_Guard::skin_messages( $skin ),
 		);
 	}

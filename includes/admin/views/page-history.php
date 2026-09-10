@@ -31,6 +31,26 @@ $emcp_domain_labels = array(
 	'database'   => __( 'Database', 'emcp-tools' ),
 );
 
+// Keep the ledger scannable even when it reaches its 500-entry cap.
+$emcp_history_per_page = 20;
+$emcp_history_total    = count( $emcp_entries );
+$emcp_history_page     = class_exists( 'EMCP_Tools_Admin_Pager' ) ? EMCP_Tools_Admin_Pager::current( 'history_page' ) : 1;
+$emcp_history_pages    = max( 1, (int) ceil( $emcp_history_total / $emcp_history_per_page ) );
+$emcp_history_page     = min( $emcp_history_page, $emcp_history_pages );
+$emcp_entries          = array_slice( $emcp_entries, ( $emcp_history_page - 1 ) * $emcp_history_per_page, $emcp_history_per_page );
+$emcp_history_href     = static function ( $emcp_n ) use ( $emcp_domain ) {
+	$emcp_args = array(
+		'page' => EMCP_Tools_Admin::PAGE_SLUG . '-history',
+	);
+	if ( '' !== $emcp_domain ) {
+		$emcp_args['domain'] = $emcp_domain;
+	}
+	if ( $emcp_n > 1 ) {
+		$emcp_args['history_page'] = (int) $emcp_n;
+	}
+	return add_query_arg( $emcp_args, admin_url( 'admin.php' ) );
+};
+
 // Result notice after a rollback.
 // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display-only notice.
 $emcp_rb = isset( $_GET['rollback'] ) ? sanitize_key( wp_unslash( $_GET['rollback'] ) ) : '';
@@ -57,7 +77,7 @@ $emcp_cleared = isset( $_GET['cleared'] ) ? absint( wp_unslash( $_GET['cleared']
 			<?php esc_html_e( 'Rolling back now would overwrite the newer edits.', 'emcp-tools' ); ?>
 			<?php if ( '' !== $emcp_conflict_id ) : ?>
 				<a class="button button-secondary" style="margin-left:8px;"
-					href="<?php echo esc_url( EMCP_Tools_Admin::rollback_change_url( $emcp_conflict_id, true ) ); ?>"
+					href="<?php echo esc_url( EMCP_Tools_Admin::rollback_change_url( $emcp_conflict_id, true, $emcp_history_page, $emcp_domain ) ); ?>"
 					onclick="return confirm('<?php echo esc_js( __( 'Overwrite the newer state and roll back anyway?', 'emcp-tools' ) ); ?>');">
 					<?php esc_html_e( 'Roll back anyway', 'emcp-tools' ); ?>
 				</a>
@@ -121,6 +141,11 @@ $emcp_cleared = isset( $_GET['cleared'] ) ? absint( wp_unslash( $_GET['cleared']
 			<p><?php esc_html_e( 'No changes recorded yet. As soon as a connected AI edits a page, writes a file, or changes the database, it will appear here, ready to roll back.', 'emcp-tools' ); ?></p>
 		</div>
 	<?php else : ?>
+		<?php if ( class_exists( 'EMCP_Tools_Admin_Pager' ) ) : ?>
+			<p class="description emcp-pager-count">
+				<?php echo EMCP_Tools_Admin_Pager::summary( $emcp_history_page, $emcp_history_per_page, count( $emcp_entries ), $emcp_history_total ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped by summary(). ?>
+			</p>
+		<?php endif; ?>
 		<table class="widefat striped emcp-history__table">
 			<thead>
 				<tr>
@@ -159,7 +184,7 @@ $emcp_cleared = isset( $_GET['cleared'] ) ? absint( wp_unslash( $_GET['cleared']
 								<span class="emcp-history__state emcp-history__state--done"><?php esc_html_e( 'Rolled back', 'emcp-tools' ); ?></span>
 							<?php elseif ( $emcp_reversible ) : ?>
 								<a class="button button-secondary emcp-history__rollback"
-									href="<?php echo esc_url( EMCP_Tools_Admin::rollback_change_url( $emcp_id ) ); ?>"
+									href="<?php echo esc_url( EMCP_Tools_Admin::rollback_change_url( $emcp_id, false, $emcp_history_page, $emcp_domain ) ); ?>"
 									onclick="return confirm('<?php echo esc_js( __( 'Roll this change back? This restores the previous state.', 'emcp-tools' ) ); ?>');">
 									<span class="dashicons dashicons-undo" aria-hidden="true"></span>
 									<?php esc_html_e( 'Roll back', 'emcp-tools' ); ?>
@@ -168,7 +193,7 @@ $emcp_cleared = isset( $_GET['cleared'] ) ? absint( wp_unslash( $_GET['cleared']
 								<span class="emcp-history__state">, </span>
 							<?php endif; ?>
 							<a class="emcp-history__delete"
-								href="<?php echo esc_url( EMCP_Tools_Admin::delete_change_url( $emcp_id ) ); ?>"
+								href="<?php echo esc_url( EMCP_Tools_Admin::delete_change_url( $emcp_id, $emcp_history_page, $emcp_domain ) ); ?>"
 								aria-label="<?php esc_attr_e( 'Delete this history entry', 'emcp-tools' ); ?>"
 								onclick="return confirm('<?php echo esc_js(
 									$emcp_reversible
@@ -183,6 +208,12 @@ $emcp_cleared = isset( $_GET['cleared'] ) ? absint( wp_unslash( $_GET['cleared']
 				<?php endforeach; ?>
 			</tbody>
 		</table>
+		<?php
+		if ( class_exists( 'EMCP_Tools_Admin_Pager' ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped by render().
+			echo EMCP_Tools_Admin_Pager::render( $emcp_history_page, $emcp_history_pages, $emcp_history_href );
+		}
+		?>
 		<p class="emcp-history__note"><?php esc_html_e( 'The ledger keeps the most recent changes (older entries age out). Rolling a change back records its own entry.', 'emcp-tools' ); ?></p>
 	<?php endif; ?>
 </div>

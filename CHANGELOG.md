@@ -2,6 +2,16 @@
 
 All notable changes to MCP Tools for Elementor are documented in this file.
 
+## [3.16.0]
+
+> Adds agent-structured content imports, secure uploaded package installs, broader ACF coverage, and a complete Pro GSAP integration.
+
+- New: **GSAP Integration (Pro).** An opt-in module locally bundles GSAP 3.15.0 core and all 24 plugins from the official distribution, registers stable WordPress script handles for use across pages, themes, and plugins, resolves plugin dependencies, and provides frontend/admin/editor loading contexts. The module card exposes individual plugin toggles, while `gsap-read` and `gsap-write` expose the catalog, runtime status, contexts, and settings over MCP. A dedicated `emcp-gsap` Agent Skill consolidates the official GreenSock playbooks with EMCP, WordPress, Elementor, accessibility, performance, and browser-verification guidance, and ships in both downloadable skill formats.
+- New: **Agent-parsed document imports for ACF and WooCommerce.** The agent extracts PDF, spreadsheet, CSV, DOCX, or OCR content locally and sends bounded structured JSON to WordPress. ACF adds `validate-fields` and `batch-update-fields`; WooCommerce adds `plan-product-import` and `upsert-products`. Both preserve row provenance, reject an invalid chunk before writes, bind approval to a deterministic `plan_hash`, and return per-item read-back results. WooCommerce resolves products by explicit ID then exact SKU, never by name, and never deletes through the import operations.
+- New: **Plugin and theme installers accept uploaded ZIP attachments.** `install-plugin` and `install-theme` retain wordpress.org slug installs and now also accept `zip_attachment_id` from `upload-media`, with mandatory confirmation and SHA-256 matching. The shared guard rejects paths outside uploads, malformed or multi-root archives, traversal, symlinks, unsafe expansion, missing package headers, incompatible WordPress/PHP requirements, overwrites, and protected plugin destinations. Uploaded packages remain inactive unless activation is explicitly requested.
+- Improved: **ACF Free and Pro field coverage is runtime-discoverable and type-aware.** `list-field-types` reports the active ACF registry; field-group reads and writes preserve built-in settings; clone sources and nested values round-trip; and legacy plus batch writes validate built-in scalar, choice, media, relational, date/time, and nested field constraints before mutation. Live ACF Pro 6.8.9 testing covered all 36 public field types and bidirectional relationship updates. See `docs/ACF-MCP-COVERAGE.md` for tested boundaries and remaining feature gaps.
+- Improved: **Change History is paginated.** The admin ledger now shows 20 entries per page with a visible result range and shared previous, next, and numbered controls. Domain filters, rollback links, and delete links retain the current page and filter, while stale page numbers clamp to the final valid page.
+
 ## [3.15.2]
 
 > Restores the intended formatting of the 3.15.1 release notes in plugin changelog views.

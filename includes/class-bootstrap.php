@@ -168,6 +168,7 @@ class EMCP_Tools_Bootstrap {
 		require_once EMCP_TOOLS_DIR . 'includes/class-change-log.php';
 		require_once EMCP_TOOLS_DIR . 'includes/class-change-blobs.php';
 		require_once EMCP_TOOLS_DIR . 'includes/class-change-recorder.php';
+		require_once EMCP_TOOLS_DIR . 'includes/class-structured-import.php';
 		require_once EMCP_TOOLS_DIR . 'includes/class-search-ranker.php';
 		require_once EMCP_TOOLS_DIR . 'includes/class-search-index.php';
 		require_once EMCP_TOOLS_DIR . 'includes/redirects/class-redirect-store.php';

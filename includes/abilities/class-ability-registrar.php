@@ -268,6 +268,13 @@ class EMCP_Tools_Ability_Registrar {
 			$this->ability_names = array_merge( $this->ability_names, $woo->get_ability_names() );
 		}
 
+		// FunnelKit Funnel Builder read abilities (Pro) — only when active.
+		if ( class_exists( 'EMCP_Tools_FunnelKit_Integration' ) && EMCP_Tools_FunnelKit_Integration::funnelkit_active() ) {
+			$funnelkit = new EMCP_Tools_FunnelKit_Integration();
+			$funnelkit->register();
+			$this->ability_names = array_merge( $this->ability_names, $funnelkit->get_ability_names() );
+		}
+
 		// Meta Box abilities — only when Meta Box (free or extensions) is active.
 		if ( class_exists( 'EMCP_Tools_Meta_Box_Abilities' ) && EMCP_Tools_Meta_Box_Abilities::metabox_active() ) {
 			$metabox = new EMCP_Tools_Meta_Box_Abilities();
@@ -608,6 +615,16 @@ class EMCP_Tools_Ability_Registrar {
 			$migrate = new EMCP_Tools_Migrate_Abilities();
 			$migrate->register();
 			$this->ability_names = array_merge( $this->ability_names, $migrate->get_ability_names() );
+		}
+
+		// GSAP Integration (Pro). The module registers local scripts site-wide;
+		// these two dispatchers expose its catalog and settings over MCP.
+		if ( class_exists( 'EMCP_Tools_GSAP_Abilities' )
+			&& class_exists( 'EMCP_Tools_GSAP_Module' )
+			&& EMCP_Tools_GSAP_Module::is_enabled() ) {
+			$gsap = new EMCP_Tools_GSAP_Abilities();
+			$gsap->register();
+			$this->ability_names = array_merge( $this->ability_names, $gsap->get_ability_names() );
 		}
 	}
 
