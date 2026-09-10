@@ -3,7 +3,7 @@ Contributors: mianshahzadraza
 Tags: elementor, mcp, ai, page-builder, automation
 Requires at least: 6.9
 Tested up to: 7.1
-Stable tag: 3.15.1
+Stable tag: 3.15.2
 Requires PHP: 8.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -177,6 +177,12 @@ On shared LiteSpeed hosting (e.g. Hostinger) this is usually the host caching/bu
 2. Connection configuration page with copy-paste configs.
 
 == Changelog ==
+
+= 3.15.2 =
+
+Restores the intended formatting of the 3.15.1 release notes in plugin changelog views.
+
+* Fixed: the 3.15.1 changelog now keeps the required spacing between its heading, summary, and bullet list so WordPress-compatible readme renderers display it correctly.
 
 = 3.15.1 =
 

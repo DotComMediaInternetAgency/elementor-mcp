@@ -2,6 +2,12 @@
 
 All notable changes to MCP Tools for Elementor are documented in this file.
 
+## [3.15.2]
+
+> Restores the intended formatting of the 3.15.1 release notes in plugin changelog views.
+
+- Fixed: **The 3.15.1 changelog renders as a formatted release section.** Its WordPress readme entry now keeps the required blank lines between the heading, summary, and bullet list. The release build also rejects a current-version changelog that does not follow this structure.
+
 ## [3.15.1]
 
 > Fixes AI Chat for the latest OpenAI models, reduces the context sent on each turn, and restores settings sync between connected sites.
