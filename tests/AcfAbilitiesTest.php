@@ -249,6 +249,20 @@ class AcfAbilitiesTest extends TestCase {
 		$this->assertCount( 0, $GLOBALS['emcp_test']['update_field_calls'] );
 	}
 
+	public function test_required_true_false_field_matches_acf_false_value_validation(): void {
+		$this->seed_post_with_group();
+		$this->add_field( array( 'key' => 'field_consent', 'name' => 'consent', 'label' => 'Consent', 'type' => 'true_false', 'required' => 1 ) );
+
+		foreach ( array( false, 0, '0' ) as $value ) {
+			$result = $this->abilities->execute_update_fields( array(
+				'post_id' => 10,
+				'fields'  => array( 'consent' => $value ),
+			) );
+			$this->assertSame( 'required_value_missing', $result['skipped'][0]['reason'] );
+		}
+		$this->assertCount( 0, $GLOBALS['emcp_test']['update_field_calls'] );
+	}
+
 	public function test_group_fields_are_validated_recursively(): void {
 		$this->seed_post_with_group();
 		$this->add_field( array(

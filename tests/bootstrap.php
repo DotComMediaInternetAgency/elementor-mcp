@@ -44,6 +44,8 @@ function emcp_test_reset(): void {
 		'users'              => array(),   // user_id => user-like object.
 		'attachment_meta'    => array(),   // attachment_id => image metadata.
 		'attachment_urls'    => array(),   // attachment_id => URL.
+		'attached_files'     => array(),   // attachment_id => local path.
+		'uploads_basedir'    => '',        // wp_get_upload_dir() basedir.
 		'post_mime_types'    => array(),   // attachment_id => MIME type.
 		'options_pages'      => array(),
 		'abilities'          => array(),   // name => registration args.
@@ -187,6 +189,18 @@ if ( ! function_exists( 'wp_get_attachment_url' ) ) {
 if ( ! function_exists( 'wp_get_attachment_metadata' ) ) {
 	function wp_get_attachment_metadata( $post_id = 0 ) {
 		return $GLOBALS['emcp_test']['attachment_meta'][ (int) $post_id ] ?? array();
+	}
+}
+
+if ( ! function_exists( 'get_attached_file' ) ) {
+	function get_attached_file( $post_id ) {
+		return $GLOBALS['emcp_test']['attached_files'][ (int) $post_id ] ?? false;
+	}
+}
+
+if ( ! function_exists( 'wp_get_upload_dir' ) ) {
+	function wp_get_upload_dir(): array {
+		return array( 'basedir' => $GLOBALS['emcp_test']['uploads_basedir'] ?? '' );
 	}
 }
 
@@ -522,5 +536,6 @@ require_once EMCP_TOOLS_DIR . 'includes/abilities/forms/class-form-integration.p
 require_once EMCP_TOOLS_DIR . 'includes/abilities/forms/class-cf7-integration.php';
 require_once EMCP_TOOLS_DIR . 'includes/abilities/class-acf-abilities.php';
 require_once EMCP_TOOLS_DIR . 'includes/abilities/class-metabox-abilities.php';
+require_once EMCP_TOOLS_DIR . 'includes/class-package-guard.php';
 require_once EMCP_TOOLS_DIR . 'includes/redirects/class-redirect-store.php';
 require_once EMCP_TOOLS_DIR . 'includes/abilities/class-redirect-abilities.php';

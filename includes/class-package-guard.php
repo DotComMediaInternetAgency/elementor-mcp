@@ -26,6 +26,7 @@ class EMCP_Tools_Package_Guard {
 	const ZIP_MAX_ENTRIES       = 5000;
 	const ZIP_MAX_EXPANDED_SIZE = 268435456; // 256 MB.
 	const ZIP_MAX_RATIO         = 200;
+	const PACKAGE_HEADER_BYTES  = 16384;
 
 	/**
 	 * Plugin files that must never be deactivated or deleted via MCP.
@@ -250,16 +251,23 @@ class EMCP_Tools_Package_Guard {
 				$zip->close(); return new \WP_Error( 'unsafe_zip_entry', __( 'The archive contains a path traversal entry.', 'emcp-tools' ) );
 			}
 			if ( '__MACOSX' === ( $parts[0] ?? '' ) || '.DS_Store' === basename( $name ) ) { continue; }
+			$attributes = 0;
+			if ( $zip->getExternalAttributesIndex( $i, $opsys, $attributes ) && 0120000 === ( ( $attributes >> 16 ) & 0170000 ) ) {
+				$zip->close(); return new \WP_Error( 'zip_symlink_rejected', __( 'Symbolic links are not allowed in uploaded packages.', 'emcp-tools' ) );
+			}
 			if ( count( $parts ) < 2 ) {
-				$zip->close(); return new \WP_Error( 'invalid_zip_layout', __( 'The archive must contain exactly one top-level package directory.', 'emcp-tools' ) );
+				if ( '/' !== substr( $name, -1 ) ) {
+					$zip->close(); return new \WP_Error( 'invalid_zip_layout', __( 'The archive must contain exactly one top-level package directory.', 'emcp-tools' ) );
+				}
+				if ( '' === $root ) { $root = (string) $parts[0]; }
+				elseif ( $root !== (string) $parts[0] ) {
+					$zip->close(); return new \WP_Error( 'multiple_zip_roots', __( 'The archive contains more than one top-level package directory.', 'emcp-tools' ) );
+				}
+				continue;
 			}
 			if ( '' === $root ) { $root = (string) $parts[0]; }
 			elseif ( $root !== (string) $parts[0] ) {
 				$zip->close(); return new \WP_Error( 'multiple_zip_roots', __( 'The archive contains more than one top-level package directory.', 'emcp-tools' ) );
-			}
-			$attributes = 0;
-			if ( $zip->getExternalAttributesIndex( $i, $opsys, $attributes ) && 0120000 === ( ( $attributes >> 16 ) & 0170000 ) ) {
-				$zip->close(); return new \WP_Error( 'zip_symlink_rejected', __( 'Symbolic links are not allowed in uploaded packages.', 'emcp-tools' ) );
 			}
 			$total_size       += (int) ( $stat['size'] ?? 0 );
 			$total_compressed += (int) ( $stat['comp_size'] ?? 0 );
@@ -282,12 +290,12 @@ class EMCP_Tools_Package_Guard {
 			if ( ! isset( $entries[ $main_file ] ) ) {
 				$zip->close(); return new \WP_Error( 'theme_header_missing', __( 'The archive root must contain style.css with a Theme Name header.', 'emcp-tools' ) );
 			}
-			$headers = self::parse_package_headers( (string) $zip->getFromIndex( $entries[ $main_file ] ), 'theme' );
+			$headers = self::parse_package_headers( (string) $zip->getFromIndex( $entries[ $main_file ], self::PACKAGE_HEADER_BYTES ), 'theme' );
 			if ( '' === $headers['name'] ) { $zip->close(); return new \WP_Error( 'theme_header_missing', __( 'style.css does not contain a valid Theme Name header.', 'emcp-tools' ) ); }
 		} else {
 			foreach ( $entries as $name => $index ) {
 				if ( 1 !== substr_count( $name, '/' ) || 'php' !== strtolower( pathinfo( $name, PATHINFO_EXTENSION ) ) ) { continue; }
-				$candidate = self::parse_package_headers( (string) $zip->getFromIndex( $index ), 'plugin' );
+				$candidate = self::parse_package_headers( (string) $zip->getFromIndex( $index, self::PACKAGE_HEADER_BYTES ), 'plugin' );
 				if ( '' !== $candidate['name'] ) { $main_file = $name; $headers = $candidate; break; }
 			}
 			if ( '' === $main_file ) { $zip->close(); return new \WP_Error( 'plugin_header_missing', __( 'The archive root must contain a PHP file with a Plugin Name header.', 'emcp-tools' ) ); }
@@ -311,10 +319,12 @@ class EMCP_Tools_Package_Guard {
 			}
 		}
 		if ( '' !== $headers['requires_php'] && version_compare( PHP_VERSION, $headers['requires_php'], '<' ) ) {
+			/* translators: %s: Minimum required PHP version. */
 			return new \WP_Error( 'incompatible_php', sprintf( __( 'This package requires PHP %s or newer.', 'emcp-tools' ), $headers['requires_php'] ) );
 		}
 		$wp_version = function_exists( 'get_bloginfo' ) ? (string) get_bloginfo( 'version' ) : '';
 		if ( '' !== $headers['requires_wp'] && '' !== $wp_version && version_compare( $wp_version, $headers['requires_wp'], '<' ) ) {
+			/* translators: %s: Minimum required WordPress version. */
 			return new \WP_Error( 'incompatible_wordpress', sprintf( __( 'This package requires WordPress %s or newer.', 'emcp-tools' ), $headers['requires_wp'] ) );
 		}
 		return array( 'path' => $real, 'sha256' => $actual_sha256, 'root' => $root, 'main_file' => $main_file, 'headers' => $headers, 'attachment_id' => $attachment_id );
@@ -329,7 +339,7 @@ class EMCP_Tools_Package_Guard {
 		);
 		$out = array();
 		foreach ( $names as $key => $label ) {
-			$out[ $key ] = preg_match( '/^[ \t\/*#@]*' . preg_quote( $label, '/' ) . '[ \t]*:[ \t]*(.+)$/mi', substr( $contents, 0, 16384 ), $match ) ? trim( preg_replace( '/\s*(?:\*\/)?\s*$/', '', $match[1] ) ) : '';
+			$out[ $key ] = preg_match( '/^[ \t\/*#@]*' . preg_quote( $label, '/' ) . '[ \t]*:[ \t]*(.+)$/mi', substr( $contents, 0, self::PACKAGE_HEADER_BYTES ), $match ) ? trim( preg_replace( '/\s*(?:\*\/)?\s*$/', '', $match[1] ) ) : '';
 		}
 		return $out;
 	}

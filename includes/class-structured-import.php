@@ -22,6 +22,7 @@ class EMCP_Tools_Structured_Import {
 			return new \WP_Error( 'missing_items', __( 'A non-empty "items" array is required.', 'emcp-tools' ) );
 		}
 		if ( count( $items ) > self::MAX_ITEMS ) {
+			/* translators: %d: Maximum number of items accepted by one import call. */
 			return new \WP_Error( 'chunk_too_large', sprintf( __( 'A single import call is limited to %d items. Send additional chunks separately.', 'emcp-tools' ), self::MAX_ITEMS ) );
 		}
 
@@ -29,20 +30,25 @@ class EMCP_Tools_Structured_Import {
 		$seen       = array();
 		foreach ( array_values( $items ) as $index => $item ) {
 			if ( ! is_array( $item ) ) {
+				/* translators: %d: Zero-based import item index. */
 				return new \WP_Error( 'invalid_item', sprintf( __( 'Import item %d must be an object.', 'emcp-tools' ), $index ) );
 			}
 			$client_ref = isset( $item['client_ref'] ) ? trim( (string) $item['client_ref'] ) : '';
 			if ( '' === $client_ref ) {
+				/* translators: %d: Zero-based import item index. */
 				return new \WP_Error( 'missing_client_ref', sprintf( __( 'Import item %d requires client_ref.', 'emcp-tools' ), $index ) );
 			}
 			if ( isset( $seen[ $client_ref ] ) ) {
+				/* translators: %s: Import item client reference. */
 				return new \WP_Error( 'duplicate_client_ref', sprintf( __( 'Duplicate client_ref "%s".', 'emcp-tools' ), $client_ref ) );
 			}
 			if ( ! isset( $item['data'] ) || ! is_array( $item['data'] ) ) {
+				/* translators: %s: Import item client reference. */
 				return new \WP_Error( 'invalid_item_data', sprintf( __( 'Import item "%s" requires a data object.', 'emcp-tools' ), $client_ref ) );
 			}
 			$source = $item['source'] ?? array();
 			if ( ! is_array( $source ) ) {
+				/* translators: %s: Import item client reference. */
 				return new \WP_Error( 'invalid_item_source', sprintf( __( 'Import item "%s" source must be an object.', 'emcp-tools' ), $client_ref ) );
 			}
 

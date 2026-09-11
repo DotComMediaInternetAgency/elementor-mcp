@@ -744,8 +744,13 @@ class EMCP_Tools_ACF_Abilities {
 				if ( ! $custom && ! in_array( (string) $choice, $choices, true ) ) { return 'unknown_choice'; }
 			}
 		}
-		if ( 'true_false' === $type && ! in_array( $value, array( true, false, 0, 1, '0', '1' ), true ) ) {
-			return 'boolean_required';
+		if ( 'true_false' === $type ) {
+			if ( ! empty( $field['required'] ) && in_array( $value, array( false, 0, '0' ), true ) ) {
+				return 'required_value_missing';
+			}
+			if ( ! in_array( $value, array( true, false, 0, 1, '0', '1' ), true ) ) {
+				return 'boolean_required';
+			}
 		}
 		if ( 'link' === $type ) {
 			if ( ! is_array( $value ) || ! isset( $value['url'] ) || ! $this->is_valid_http_url( $value['url'] ) ) {

@@ -2857,6 +2857,7 @@ class EMCP_Tools_Admin {
 			)
 		);
 		if ( is_wp_error( $response ) ) {
+			/* translators: 1: MCP handshake stage, 2: Request error message. */
 			return new WP_Error( $stage, sprintf( __( '%1$s request failed: %2$s', 'emcp-tools' ), $this->diagnostic_stage_label( $stage ), $response->get_error_message() ) );
 		}
 
@@ -2878,10 +2879,12 @@ class EMCP_Tools_Admin {
 
 		$decoded = json_decode( (string) wp_remote_retrieve_body( $response ), true );
 		if ( ! is_array( $decoded ) ) {
+			/* translators: %s: MCP handshake stage. */
 			return new WP_Error( $stage, sprintf( __( '%s returned a non-JSON response.', 'emcp-tools' ), $this->diagnostic_stage_label( $stage ) ) );
 		}
 		if ( isset( $decoded['error'] ) ) {
 			$error_message = isset( $decoded['error']['message'] ) ? sanitize_text_field( (string) $decoded['error']['message'] ) : __( 'Unknown JSON-RPC error.', 'emcp-tools' );
+			/* translators: 1: MCP handshake stage, 2: JSON-RPC error message. */
 			return new WP_Error( $stage, sprintf( __( '%1$s returned an MCP error: %2$s', 'emcp-tools' ), $this->diagnostic_stage_label( $stage ), $error_message ) );
 		}
 
