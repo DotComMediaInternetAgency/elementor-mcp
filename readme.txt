@@ -181,13 +181,15 @@ On shared LiteSpeed hosting (e.g. Hostinger) this is usually the host caching/bu
 
 = 3.16.0 =
 
-Adds agent-structured content imports, secure uploaded package installs, broader ACF coverage, and a complete Pro GSAP integration.
+Adds structured imports, uploaded package installs, broader ACF coverage, FunnelKit reads, GSAP integration, and correct Hello Elementor Themer rendering.
 
 * New: GSAP Integration is an opt-in Pro module with locally bundled GSAP 3.15.0 core and all 24 distributed plugins, stable WordPress handles, per-plugin and context controls, dependency resolution, MCP read/write dispatchers, and a dedicated Agent Skill included in both downloadable skill formats.
+* New: FunnelKit Funnel Builder read support (Pro) adds five operations for funnels and ordered steps, decoded funnel-page configuration, checkout products with effective prices, and checkout fields in saved order (#140). Automations, contacts, statistics, and writes remain outside 3.16.0.
 * New: ACF and WooCommerce accept bounded structured imports extracted by an agent from PDF, spreadsheet, CSV, DOCX, OCR, or other source documents; WordPress validates and writes the structured payload without parsing the source file server-side.
 * New: plugin and theme installers accept confirmed, SHA-256-bound ZIP attachments uploaded through the media tool, with archive, compatibility, traversal, symlink, overwrite, and protected-destination guards.
 * Improved: ACF Free and Pro coverage is runtime-discoverable and type-aware, including nested Pro values, clone sources, relationship updates, field-group settings, and full validation before mutation.
 * Improved: Change History now shows 20 entries per page with result counts and previous, next, and numbered controls; filters and row actions retain the current History page.
+* Fixed: EMCP Themer headers and footers now replace Hello Elementor 3.x native parts through Hello's real render-time filter, without duplicate output or interference with settings checks and Elementor Pro precedence (#138).
 
 = 3.15.2 =
 
