@@ -3,7 +3,7 @@ Contributors: mianshahzadraza
 Tags: elementor, mcp, ai, page-builder, automation
 Requires at least: 6.9
 Tested up to: 7.1
-Stable tag: 3.16.0
+Stable tag: 3.16.1
 Requires PHP: 8.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -178,6 +178,12 @@ On shared LiteSpeed hosting (e.g. Hostinger) this is usually the host caching/bu
 2. Connection configuration page with copy-paste configs.
 
 == Changelog ==
+
+= 3.16.1 =
+
+Fixes detected server URLs on plain-permalink WordPress sites in both Free and Pro.
+
+* Fixed: Remove the trailing index.php from the detected Server URL while preserving subdirectory paths. Corrects the default displayed on the Connection tab and the site URL embedded in generated .mcpb bundles (#142).
 
 = 3.16.0 =
 
