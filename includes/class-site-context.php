@@ -134,7 +134,9 @@ class EMCP_Tools_Site_Context {
 		if ( is_string( $stripped ) && $stripped !== $rest ) {
 			return rtrim( $stripped, '/' );
 		}
-		// Plain permalinks: https://host/?rest_route=/ → keep scheme+host(+port+path).
+		// Plain permalinks: https://host/index.php?rest_route=/ → keep scheme+host(+port+path),
+		// dropping the index.php WordPress always inserts before the query on this permalink
+		// structure — it's part of how the REST request is routed, not part of the site's base.
 		$parts = wp_parse_url( $rest );
 		if ( is_array( $parts ) && ! empty( $parts['scheme'] ) && ! empty( $parts['host'] ) ) {
 			$base = $parts['scheme'] . '://' . $parts['host'];
@@ -142,7 +144,9 @@ class EMCP_Tools_Site_Context {
 				$base .= ':' . $parts['port'];
 			}
 			if ( ! empty( $parts['path'] ) ) {
-				$base .= rtrim( (string) $parts['path'], '/' );
+				$path = rtrim( (string) $parts['path'], '/' );
+				$path = preg_replace( '#/index\.php$#', '', $path );
+				$base .= $path;
 			}
 			return rtrim( $base, '/' );
 		}
