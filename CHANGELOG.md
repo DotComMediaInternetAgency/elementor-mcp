@@ -2,6 +2,10 @@
 
 All notable changes to MCP Tools for Elementor are documented in this file.
 
+## [Unreleased]
+
+- Fixed: **The detected Server URL no longer includes `index.php` on plain-permalink sites.** `detected_base_url()` now strips the `index.php` WordPress inserts before the query string when permalinks are set to "Plain," the same way it already strips `/wp-json/` on pretty permalinks. Previously this leaked into the Connection tab's detected default and the site URL baked into a generated `.mcpb` bundle, breaking the connector until a user manually edited the URL.
+
 ## [3.16.0]
 
 > Adds agent-structured content imports, secure uploaded package installs, broader ACF coverage, FunnelKit reads, a complete Pro GSAP integration, and correct Hello Elementor Themer rendering.

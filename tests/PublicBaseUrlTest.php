@@ -75,4 +75,24 @@ class PublicBaseUrlTest extends \PHPUnit\Framework\TestCase {
 		// so it falls back to scheme+host from wp_parse_url.
 		$this->assertSame( 'https://plain.test', EMCP_Tools_Site_Context::detected_base_url() );
 	}
+
+	/**
+	 * Real-world plain permalinks: rest_url() on WordPress actually routes
+	 * through index.php (https://host/index.php?rest_route=/), unlike the root
+	 * query-only shape in test_detected_plain_permalinks() above. detected_base_url()
+	 * must strip that index.php the same way it strips /wp-json/ on pretty
+	 * permalinks — it's REST routing, not part of the site's base URL. Left
+	 * unstripped, this leaked into the Connection tab's detected default and the
+	 * generated .mcpb bundle's baked-in site URL on any plain-permalink site.
+	 */
+	public function test_detected_plain_permalinks_strips_index_php() {
+		$GLOBALS['emcp_test']['rest_url_base'] = 'https://plain.test/index.php?rest_route=';
+		$this->assertSame( 'https://plain.test', EMCP_Tools_Site_Context::detected_base_url() );
+	}
+
+	/** Same index.php stripping, but on a subdirectory plain-permalink install. */
+	public function test_detected_plain_permalinks_strips_index_php_in_subdirectory() {
+		$GLOBALS['emcp_test']['rest_url_base'] = 'https://plain.test/blog/index.php?rest_route=';
+		$this->assertSame( 'https://plain.test/blog', EMCP_Tools_Site_Context::detected_base_url() );
+	}
 }
